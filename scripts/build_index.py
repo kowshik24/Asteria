@@ -37,7 +37,7 @@ def main():
 
     bor = ButterflyRotation(cfg["dim"])
     bor.load_state_dict(ckpt["bor"])
-    ecvh = ECVH(cfg["dim"], cfg["m_vantages"], cfg["k_raw"], cfg["m_code"])
+    ecvh = ECVH(cfg["dim"], cfg["m_vantages"], cfg["raw_bits"], cfg["code_bits"])
     ecvh.load_state_dict(ckpt["ecvh"])
     lrsq = LRSQ(cfg["dim"], cfg["rank"], cfg["blocks"])
     lrsq.load_state_dict(ckpt["lrsq"])

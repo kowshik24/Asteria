@@ -24,79 +24,8 @@ from asteria.ecvh import ECVH
 from asteria.lrsq import LRSQ
 from asteria.index_cpu import AsteriaIndexCPU
 
-def parse_args():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--model", type=str, required=True)
-    ap.add_argument("--index", type=str, required=True)
-    ap.add_argument("--queries", type=str, required=True)
-    ap.add_argument("--k", type=int, default=10)
-    ap.add_argument("--hamming_radius", type=int, default=1)
-    ap.add_argument("--report", type=str, choices=["none","recall"], default="none")
-    ap.add_argument("--device", type=str, default="cpu")
-    ap.add_argument("--max_eval_queries", type=int, default=1000, help="Max queries for recall evaluation (use -1 for all)")
-    return ap.parse_args()
-
-def brute_force_gpu(db, q, k, device='cuda'):
-    """GPU-accelerated brute force search"""
-    if not torch.cuda.is_available():
-        print("CUDA not available, falling back to CPU")
-        return brute_force_cpu(db, q, k)
-    
-    # Convert to torch tensors on GPU
-    db_gpu = torch.tensor(db, dtype=torch.float32, device=device)
-    q_gpu = torch.tensor(q, dtype=torch.float32, device=device)
-    
-    # Adaptive batch size based on GPU memory and data size
-    # For Colab T4 (16GB), we can handle larger batches
-    if q.shape[0] <= 5000:
-        batch_size = min(2000, q.shape[0])  # Larger batch for smaller query sets
-    else:
-        batch_size = min(1000, q.shape[0])  # Conservative for large query sets
-    
-    n_queries = q.shape[0]
-    top_idx = torch.zeros((n_queries, k), dtype=torch.int64, device='cpu')
-    
-    print(f"Running GPU brute force with batch size {batch_size}...")
-    print(f"GPU memory available: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
-    
-    for i in range(0, n_queries, batch_size):
-        end_i = min(i + batch_size, n_queries)
-        batch_q = q_gpu[i:end_i]
-        
-        # Compute similarities: batch_q @ db_gpu.T
-        sims = torch.mm(batch_q, db_gpu.T)
-        
-        # Get top-k indices
-        _, idx = torch.topk(sims, k=k, dim=1, largest=True, sorted=True)
-        top_idx[i:end_i] = idx.cpu()
-        
-        # Clear GPU cache periodically
-        if i % (batch_size * 5) == 0:
-            torch.cuda.empty_cache()
-    
-    return top_idx.numpy()
-
-def brute_force_cpu(db, q, k):
-    """CPU fallback brute force search"""
-    # db, q: numpy arrays normalized
-    # Use batched processing to avoid memory issues
-    batch_size = 1000
-    n_queries = q.shape[0]
-    top_idx = np.zeros((n_queries, k), dtype=np.int32)
-    
-    for i in range(0, n_queries, batch_size):
-        end_i = min(i + batch_size, n_queries)
-        batch_q = q[i:end_i]
-        
-        sims = batch_q @ db.T
-        idx = np.argpartition(-sims, kth=k-1, axis=1)[:, :k]
-        part = np.take_along_axis(sims, idx, axis=1)
-        order = np.argsort(-part, axis=1)
-        top_idx[i:end_i] = np.take_along_axis(idx, order, axis=1)
-    
-    return top_idx
-
 def brute_force(db, q, k):
+    # db, q: numpy arrays normalized
     sims = q @ db.T
     idx = np.argpartition(-sims, kth=k-1, axis=1)[:, :k]
     part = np.take_along_axis(sims, idx, axis=1)

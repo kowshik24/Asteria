@@ -3,6 +3,24 @@
 # Example training and benchmarking for small/medium datasets
 # Your data: 60K database vectors, 20K queries, 768D
 
+echo "=== Generating test data (if not already present) ==="
+if [ ! -f "train.npy" ] || [ ! -f "db.npy" ] || [ ! -f "queries.npy" ]; then
+    echo "Generating synthetic data..."
+    python3 -c "
+import numpy as np
+N = 200000
+D = 768
+emb = np.random.randn(N, D).astype('float32')
+emb /= np.linalg.norm(emb, axis=1, keepdims=True)+1e-9
+np.save('train.npy', emb[:120000])
+np.save('db.npy', emb[120000:180000])
+np.save('queries.npy', emb[180000:])
+print('Data generated: train.npy (120K), db.npy (60K), queries.npy (20K)')
+"
+else
+    echo "Data files already exist, skipping generation."
+fi
+
 echo "=== Training Asteria Model ==="
 python scripts/train_asteria.py \
   --train_embeddings train.npy \
@@ -32,21 +50,23 @@ python scripts/debug_index_stats.py \
 echo "=== Benchmarking with GPU Acceleration ==="
 python benchmarks/bench_search.py \
   --model asteria_model.pt \
-  --index index_state.pt \
+  --index_state index_state.pt \
   --queries queries.npy \
   --k 10 \
-  --hamming_radius 2 \
-  --report recall \
-  --max_eval_queries 5000 \
+  --max_radius 2 \
+  --target_mult 8 \
+  --sample_queries 5000 \
   --device cuda
 
 echo "=== Full Recall Evaluation (all queries) ==="
 python benchmarks/bench_search.py \
   --model asteria_model.pt \
-  --index index_state.pt \
+  --index_state index_state.pt \
   --queries queries.npy \
   --k 10 \
-  --hamming_radius 2 \
-  --report recall \
-  --max_eval_queries -1 \
+  --max_radius 2 \
+  --target_mult 8 \
+  --sample_queries 20000 \
   --device cuda
+
+echo "=== Pipeline complete! ==="

@@ -36,11 +36,11 @@ def main():
     bor = ButterflyRotation(cfg["dim"])
     bor.load_state_dict(ck["bor"])
     
-    # Fix parameter names to match the actual config
+    # Use the actual config keys saved by training script
     ecvh = ECVH(cfg["dim"],
                 cfg["m_vantages"],
-                cfg["k_raw"],  # Changed from "raw_bits" to "k_raw"
-                cfg["m_code"]) # Changed from "code_bits" to "m_code"
+                cfg["raw_bits"],  # Use "raw_bits" as saved by training
+                cfg["code_bits"]) # Use "code_bits" as saved by training
     ecvh.load_state_dict(ck["ecvh"])
     
     emb = np.load(args.embeddings)
@@ -67,8 +67,8 @@ def main():
     print(f"Mean bucket size: {occ.mean():.2f}")
     print(f"Median bucket size: {np.median(occ):.2f}")
     print(f"Max bucket size: {occ.max()}")
-    print(f"Percent empty (relative to 2^m_code) (approx if large): "
-          f"{(1 - len(buckets)/(2**min(cfg['m_code'],20)))*100:.2f}% (capped view)")
+    print(f"Percent empty (relative to 2^code_bits) (approx if large): "
+          f"{(1 - len(buckets)/(2**min(cfg['code_bits'],20)))*100:.2f}% (capped view)")
 
 if __name__ == "__main__":
     main()
