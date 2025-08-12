@@ -1,5 +1,3 @@
-Below is a complete, publication-grade concept and implementation plan for a new image-only dense-vector similarity search and clustering library that is measurably faster and more memory-efficient than existing systems, while also being fundamentally novel. It is designed to support research claims (with theory, algorithms, and benchmarks) as well as an open-source implementation.
-
 High-level overview
 
     Library name: Asteria (Anisotropy-aware Spherical Transport Index for Efficient Retrieval in Images)
