@@ -34,6 +34,17 @@ class AdvancedResearchExperiments:
         # Setup plotting
         plt.style.use('seaborn-v0_8')
         sns.set_palette("husl")
+    
+    def _to_numpy(self, tensor_or_array):
+        """Safely convert tensor or array to numpy"""
+        if hasattr(tensor_or_array, 'numpy'):
+            return tensor_or_array.numpy()
+        elif hasattr(tensor_or_array, 'cpu'):
+            return tensor_or_array.cpu().numpy()
+        elif isinstance(tensor_or_array, np.ndarray):
+            return tensor_or_array
+        else:
+            return np.array(tensor_or_array)
         
     def run_dimensionality_study(self, 
                                 dims: List[int] = [128, 256, 512, 768, 1024, 1536, 2048],
@@ -107,7 +118,7 @@ class AdvancedResearchExperiments:
                     
                     # Calculate metrics
                     qps = len(query_vectors) / search_time
-                    recall = self._calculate_recall(indices.numpy(), gt_indices)
+                    recall = self._calculate_recall(self._to_numpy(indices), gt_indices)
                     
                     # Memory estimation
                     memory_mb = self._estimate_memory(config, db_size, dim)
@@ -193,12 +204,22 @@ class AdvancedResearchExperiments:
         # 3. LRSQ rank sensitivity
         print("\n3. Testing LRSQ rank sensitivity...")
         rank_results = []
-        for rank in [16, 32, 48, 64, 96, 128]:
-            print(f"  Testing rank {rank}...")
+        # Ensure rank is divisible by blocks
+        rank_configs = [
+            (16, 8),   # rank=16, blocks=8 (16 is divisible by 8)
+            (32, 8),   # rank=32, blocks=8 (32 is divisible by 8)
+            (48, 12),  # rank=48, blocks=12 (48 is divisible by 12)
+            (64, 8),   # rank=64, blocks=8 (64 is divisible by 8)
+            (96, 12),  # rank=96, blocks=12 (96 is divisible by 12)
+            (128, 8),  # rank=128, blocks=8 (128 is divisible by 8)
+        ]
+        
+        for rank, blocks in rank_configs:
+            print(f"  Testing rank {rank} with {blocks} blocks...")
             
             config = {
                 'raw_bits': 32, 'code_bits': 32, 'm_vantages': 48,
-                'rank': rank, 'blocks': 12, 'target_mult': 8, 'max_radius': 2
+                'rank': rank, 'blocks': blocks, 'target_mult': 8, 'max_radius': 2
             }
             
             result = self._test_single_config(config, db_vectors, query_vectors, gt_indices)
@@ -306,9 +327,9 @@ class AdvancedResearchExperiments:
                 # Calculate recall (approximate for large datasets)
                 if db_size > 20000:
                     # Approximate recall using sample
-                    recall = self._approximate_recall(indices.numpy(), gt_indices, sample_indices)
+                    recall = self._approximate_recall(self._to_numpy(indices), gt_indices, sample_indices)
                 else:
-                    recall = self._calculate_recall(indices.numpy(), gt_indices)
+                    recall = self._calculate_recall(self._to_numpy(indices), gt_indices)
                 
                 memory_mb = self._estimate_memory(config, db_size, dim)
                 throughput_mb_s = (query_size * dim * 4) / (search_time * 1024 * 1024)
@@ -423,12 +444,12 @@ class AdvancedResearchExperiments:
                 
                 # Calculate metrics
                 qps = len(query_vectors) / search_time
-                recall = self._calculate_recall(indices.numpy(), gt_indices)
+                recall = self._calculate_recall(self._to_numpy(indices), gt_indices)
                 semantic_recall = self._calculate_semantic_recall(
-                    indices.numpy(), query_labels, db_labels)
+                    self._to_numpy(indices), query_labels, db_labels)
                 
                 # Cluster quality metrics
-                cluster_purity = self._calculate_cluster_purity(indices.numpy(), query_labels, db_labels)
+                cluster_purity = self._calculate_cluster_purity(self._to_numpy(indices), query_labels, db_labels)
                 
                 result = {
                     'n_clusters': n_clusters,
@@ -488,7 +509,7 @@ class AdvancedResearchExperiments:
             
             # Metrics
             qps = len(query_vectors) / search_time
-            recall = self._calculate_recall(indices.numpy(), gt_indices)
+            recall = self._calculate_recall(self._to_numpy(indices), gt_indices)
             memory_mb = self._estimate_memory(config, len(db_vectors), dim)
             
             return {

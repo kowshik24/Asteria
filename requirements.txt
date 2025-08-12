@@ -1,0 +1,44 @@
+# Core dependencies for Asteria research framework
+torch>=1.12.0
+numpy>=1.21.0
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# Computer vision and image processing
+torchvision>=0.13.0
+Pillow>=8.3.0
+
+# Scientific computing and data analysis
+scipy>=1.7.0
+scikit-learn>=1.0.0
+pandas>=1.3.0
+
+# Similarity search baselines (optional but recommended)
+faiss-cpu>=1.7.0  # Use faiss-gpu for GPU support
+annoy>=1.17.0
+
+# Progress bars and utilities
+tqdm>=4.62.0
+
+# Jupyter notebook support (optional)
+jupyter>=1.0.0
+ipykernel>=6.0.0
+
+# Development and testing (optional)
+pytest>=6.0.0
+black>=21.0.0
+flake8>=3.9.0
+
+# Additional optional dependencies for enhanced functionality
+# NearPy: LSH-based approximate nearest neighbor search
+# Note: NearPy installation can be tricky. Try these options:
+# Option 1: pip install nearpy
+# Option 2: git clone https://github.com/pixelogik/NearPy.git && cd NearPy && pip install -e .
+# Option 3: Alternative LSH library: pip install lshash
+# nearpy>=1.0.0  # Uncomment if installation succeeds
+
+# scann>=1.2.0  # Optional: for ScaNN baseline (Google's library, may need manual build)
+
+# LaTeX support for publication-ready plots
+# texlive-latex-base  # System package, install via: apt-get install texlive-latex-base
+# dvipng  # System package for LaTeX rendering in matplotlib
