@@ -217,7 +217,7 @@ class RealImageExperiment:
             },
             {
                 'name': 'Accurate',
-                'raw_bits': 64, 'code_bits': 64, 'm_vantages': 96,
+                'raw_bits': 48, 'code_bits': 64, 'm_vantages': 96,
                 'rank': 64, 'blocks': 16, 'target_mult': 12, 'max_radius': 3
             }
         ]
@@ -258,12 +258,12 @@ class RealImageExperiment:
             
             # Calculate class-based recall (semantic recall)
             semantic_recall = self._calculate_semantic_recall(
-                indices.numpy(), query_labels, np.array(range(len(db_features))) % 10)
+                indices, query_labels, np.array(range(len(db_features))) % 10)
             
             # Calculate standard recall@k (using brute force ground truth)
             gt_similarities = np.dot(query_features, db_features.T)
             gt_indices = np.argpartition(-gt_similarities, 9, axis=1)[:, :10]
-            standard_recall = self._calculate_standard_recall(indices.numpy(), gt_indices)
+            standard_recall = self._calculate_standard_recall(indices, gt_indices)
             
             result = {
                 'config_name': config['name'],
@@ -347,7 +347,7 @@ class RealImageExperiment:
             # Calculate recall
             gt_similarities = np.dot(query_features, db_features.T)
             gt_indices = np.argpartition(-gt_similarities, 9, axis=1)[:, :10]
-            recall = self._calculate_standard_recall(indices.numpy(), gt_indices)
+            recall = self._calculate_standard_recall(indices, gt_indices)
             
             result = {
                 'db_size': db_size,

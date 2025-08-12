@@ -75,15 +75,16 @@ benchmark.run_scale_experiment(
 )
 
 print('Running fast parameter study...')
-# Simplified parameter study
+# Simplified parameter study with valid configurations
 base_config = {
     'raw_bits': 32, 'code_bits': 32, 'm_vantages': 48,
     'rank': 48, 'blocks': 12, 'target_mult': 8, 'max_radius': 2
 }
 
 param_ranges = {
-    'code_bits': [16, 32, 64],
-    'm_vantages': [24, 48, 96],
+    'code_bits': [32, 48, 64],  # Ensure code_bits >= raw_bits
+    'm_vantages': [32, 48, 64],
+    'max_radius': [1, 2, 3]
 }
 
 benchmark.run_parameter_study(base_config, param_ranges, db_size=5000, query_size=200)

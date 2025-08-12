@@ -46,9 +46,23 @@ class FAISSBaseline(BaselineMethod):
         try:
             import faiss
             d = vectors.shape[1]
-            quantizer = faiss.IndexFlatL2(d)
-            self.index = faiss.IndexIVFFlat(quantizer, d, self.nlist)
-            self.index.train(vectors.astype('float32'))
+            n_vectors = vectors.shape[0]
+            
+            # Adjust nlist based on dataset size
+            # FAISS needs at least 39*nlist training points
+            max_nlist = max(1, n_vectors // 100)
+            actual_nlist = min(self.nlist, max_nlist)
+            
+            if n_vectors < 1000:
+                # Use flat index for small datasets
+                self.index = faiss.IndexFlatIP(d)
+                self.name = "FAISS-Flat"
+            else:
+                quantizer = faiss.IndexFlatIP(d)
+                self.index = faiss.IndexIVFFlat(quantizer, d, actual_nlist)
+                self.index.train(vectors.astype('float32'))
+                self.name = f"FAISS-IVF{actual_nlist}"
+            
             self.index.add(vectors.astype('float32'))
         except ImportError:
             print("FAISS not available. Install with: pip install faiss-cpu")
@@ -283,31 +297,40 @@ class ComprehensiveBenchmark:
                 config = base_config.copy()
                 config[param_name] = param_value
                 
+                # Validate ECVH parameters
+                if 'code_bits' in config and 'raw_bits' in config:
+                    if config['code_bits'] < config['raw_bits']:
+                        config['code_bits'] = config['raw_bits']
+                
                 print(f"  Testing {param_name}={param_value}")
                 
-                method = AsteriaMethod(config)
+                try:
+                    method = AsteriaMethod(config)
+                    
+                    # Build and search
+                    build_start = time.time()
+                    method.build_index(db_vectors)
+                    build_time = time.time() - build_start
+                    
+                    search_start = time.time()
+                    distances, indices = method.search(query_vectors, 10)
+                    search_time = time.time() - search_start
+                    
+                    qps = query_size / search_time if search_time > 0 else 0
+                    recall = self._calculate_recall(indices, gt_indices)
+                    
+                    self.results['parameter_study'].append({
+                        'parameter': param_name,
+                        'value': param_value,
+                        'build_time': build_time,
+                        'search_time': search_time,
+                        'qps': qps,
+                        'recall@10': recall,
+                        'config': config.copy()
+                    })
                 
-                # Build and search
-                build_start = time.time()
-                method.build_index(db_vectors)
-                build_time = time.time() - build_start
-                
-                search_start = time.time()
-                distances, indices = method.search(query_vectors, 10)
-                search_time = time.time() - search_start
-                
-                qps = query_size / search_time if search_time > 0 else 0
-                recall = self._calculate_recall(indices, gt_indices)
-                
-                self.results['parameter_study'].append({
-                    'parameter': param_name,
-                    'value': param_value,
-                    'build_time': build_time,
-                    'search_time': search_time,
-                    'qps': qps,
-                    'recall@10': recall,
-                    'config': config.copy()
-                })
+                except Exception as e:
+                    print(f"    Error with {param_name}={param_value}: {e}")
         
         self._plot_parameter_results()
     
