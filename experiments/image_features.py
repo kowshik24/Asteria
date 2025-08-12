@@ -109,6 +109,9 @@ class ImageFeatureExtractor:
     @torch.no_grad()
     def _extract_batch(self, batch_tensor: torch.Tensor) -> torch.Tensor:
         """Extract features from a batch of preprocessed images"""
+        # Ensure tensor is on the same device as the model
+        batch_tensor = batch_tensor.to(self.device)
+        
         if self.model_name == 'clip':
             features = self.model.encode_image(batch_tensor)
         elif self.model_name == 'dino':

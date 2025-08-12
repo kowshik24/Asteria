@@ -170,7 +170,13 @@ class AsteriaMethod(BaselineMethod):
             max_radius=self.config.get('max_radius', 2)
         )
         
-        return distances.numpy(), indices.numpy()
+        # Convert to numpy if they are tensors
+        if isinstance(distances, torch.Tensor):
+            distances = distances.numpy()
+        if isinstance(indices, torch.Tensor):
+            indices = indices.numpy()
+            
+        return distances, indices
 
 class ComprehensiveBenchmark:
     """Comprehensive benchmarking framework"""
@@ -383,7 +389,60 @@ class ComprehensiveBenchmark:
         if 'scale_experiment' not in self.results:
             return
         
-        import pandas as pd
+        try:
+            import pandas as pd
+            df = pd.DataFrame(self.results['scale_experiment'])
+        except ImportError:
+            print("Pandas not available, using basic plotting...")
+            # Create simple plots without pandas
+            results = self.results['scale_experiment']
+            methods = list(set([r['method'] for r in results]))
+            
+            fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+            
+            for method in methods:
+                method_data = [r for r in results if r['method'] == method]
+                db_sizes = [r['db_size'] for r in method_data]
+                qps_vals = [r['qps'] for r in method_data]
+                recall_vals = [r['recall@10'] for r in method_data]
+                build_times = [r['build_time'] for r in method_data]
+                
+                # QPS plot
+                axes[0, 0].plot(db_sizes, qps_vals, 'o-', label=method, linewidth=2)
+                axes[0, 1].plot(db_sizes, recall_vals, 'o-', label=method, linewidth=2)
+                axes[1, 0].plot(db_sizes, build_times, 'o-', label=method, linewidth=2)
+            
+            axes[0, 0].set_xlabel('Database Size')
+            axes[0, 0].set_ylabel('QPS')
+            axes[0, 0].set_title('Search Speed vs Database Size')
+            axes[0, 0].legend()
+            axes[0, 0].grid(True)
+            axes[0, 0].set_xscale('log')
+            axes[0, 0].set_yscale('log')
+            
+            axes[0, 1].set_xlabel('Database Size')
+            axes[0, 1].set_ylabel('Recall@10')
+            axes[0, 1].set_title('Recall vs Database Size')
+            axes[0, 1].legend()
+            axes[0, 1].grid(True)
+            axes[0, 1].set_xscale('log')
+            
+            axes[1, 0].set_xlabel('Database Size')
+            axes[1, 0].set_ylabel('Build Time (seconds)')
+            axes[1, 0].set_title('Build Time vs Database Size')
+            axes[1, 0].legend()
+            axes[1, 0].grid(True)
+            axes[1, 0].set_xscale('log')
+            axes[1, 0].set_yscale('log')
+            
+            # Hide the unused subplot
+            axes[1, 1].set_visible(False)
+            
+            plt.tight_layout()
+            plt.savefig(f'{self.save_dir}/scale_experiment.png', dpi=300, bbox_inches='tight')
+            plt.show()
+            return
+        
         df = pd.DataFrame(self.results['scale_experiment'])
         
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))

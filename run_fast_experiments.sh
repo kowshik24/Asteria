@@ -115,13 +115,28 @@ from benchmarks.synthetic_speed import SyntheticBenchmark
 # Create benchmark with smaller datasets
 benchmark = SyntheticBenchmark('research_results_fast/synthetic_results')
 
-print('Running fast synthetic benchmark...')
-# Run with smaller datasets
-benchmark.run_comprehensive_analysis(
+print('Running fast scale benchmark...')
+# Run scale benchmark with smaller datasets
+benchmark.run_scale_benchmark(
     db_sizes=[1000, 2500, 5000],
     query_size=200,
+    dim=512
+)
+
+print('Running fast parameter sweep...')
+# Run parameter sweep
+benchmark.run_parameter_sweep(
+    db_size=2500,
+    query_size=200,
+    dim=512
+)
+
+print('Running fast dimension study...')
+# Run dimension study
+benchmark.run_dimension_study(
     dimensions=[256, 512],
-    save_plots=True
+    db_size=2500,
+    query_size=200
 )
 
 print('Fast synthetic benchmark completed!')

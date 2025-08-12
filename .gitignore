@@ -16,3 +16,4 @@ asteria/.DS_Store
 asteria/.vscode-test/
 asteria/.ropeproject/
 asteria/.ropeconfig/
+experiments/__pycache__/
