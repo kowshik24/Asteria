@@ -52,7 +52,6 @@ def main():
     torch.save({
         "model": ckpt,
         "index_vectors_full": [v.numpy() for v in index.db_vectors_full],
-        "index_proj_codes": [c.numpy() for c in index.db_proj_codes],
         "ids": index.ids,
         "bucket_map": {k: v for k, v in index.bucket_map.items()}
     }, args.out)

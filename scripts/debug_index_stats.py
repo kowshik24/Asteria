@@ -47,6 +47,10 @@ def main():
     X = torch.tensor(emb, dtype=torch.float32, device=args.device)
     X = X / X.norm(dim=1, keepdim=True).clamp_min(1e-9)
 
+    # Move models to the same device as input
+    bor = bor.to(args.device)
+    ecvh = ecvh.to(args.device)
+
     with torch.no_grad():
         rot = bor(X)
         _, raw_logits = ecvh(rot, return_logits=True)

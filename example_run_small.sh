@@ -35,17 +35,29 @@ python scripts/train_asteria.py \
   --steps_per_epoch 300 \
   --save_model asteria_model.pt
 
+# Check if model was trained successfully
+if [ ! -f "asteria_model.pt" ]; then
+    echo "Error: Failed to create asteria_model.pt. Exiting."
+    exit 1
+fi
+
 echo "=== Building Index ==="
 python scripts/build_index.py \
   --model asteria_model.pt \
   --db_embeddings db.npy \
   --out index_state.pt
 
+# Check if index was created successfully
+if [ ! -f "index_state.pt" ]; then
+    echo "Error: Failed to create index_state.pt. Exiting."
+    exit 1
+fi
+
 echo "=== Debug Index Stats ==="
 python scripts/debug_index_stats.py \
   --model asteria_model.pt \
   --embeddings db.npy \
-  --device cuda
+  --device cpu
 
 echo "=== Benchmarking with GPU Acceleration ==="
 python benchmarks/bench_search.py \
