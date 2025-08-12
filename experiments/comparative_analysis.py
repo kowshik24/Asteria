@@ -325,7 +325,14 @@ class ComparativeAnalysis:
                 
                 # Calculate metrics
                 qps = len(query_vectors) / search_time
-                recall = self._calculate_recall(indices.numpy(), gt_indices)
+                # Convert to numpy if needed
+                if hasattr(indices, 'numpy'):
+                    indices_np = indices.numpy()
+                elif hasattr(indices, 'cpu'):
+                    indices_np = indices.cpu().numpy()
+                else:
+                    indices_np = np.array(indices)
+                recall = self._calculate_recall(indices_np, gt_indices)
                 
                 # Estimate memory usage
                 memory_mb = self._estimate_asteria_memory(config, len(db_vectors), dim)
