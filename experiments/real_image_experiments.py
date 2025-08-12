@@ -38,9 +38,15 @@ class RealImageExperiment:
         
         print("Setting up CIFAR-10 experiment...")
         
+        # Use smaller default subset for faster experimentation
+        if subset_size is None:
+            subset_size = 5000  # Much smaller default for faster testing
+        
         try:
             import torchvision
             import torchvision.transforms as transforms
+            
+            print(f"Will process {subset_size} training images and {min(500, subset_size//10)} test images")
             
             # Download CIFAR-10
             transform = transforms.Compose([
@@ -54,37 +60,70 @@ class RealImageExperiment:
             testset = torchvision.datasets.CIFAR10(root='./datasets', train=False,
                                                  download=True, transform=transform)
             
-            # Extract features
-            extractor = ImageFeatureExtractor(feature_model, device='cpu')
+            # Extract features with auto device detection
+            extractor = ImageFeatureExtractor(feature_model, device='auto')
             
-            # Process training set (database)
+            # Process training set (database) with batch processing
             train_features = []
             train_labels = []
             
             subset_size_train = subset_size if subset_size else len(trainset)
+            batch_size = 64  # Process multiple images at once
             
-            print(f"Extracting features from {subset_size_train} training images...")
-            for i in range(min(subset_size_train, len(trainset))):
-                img, label = trainset[i]
-                features = extractor._extract_batch(img.unsqueeze(0))
-                train_features.append(features.cpu().numpy())
-                train_labels.append(label)
+            print(f"Extracting features from {subset_size_train} training images with batch size {batch_size}...")
+            
+            for i in range(0, min(subset_size_train, len(trainset)), batch_size):
+                batch_end = min(i + batch_size, min(subset_size_train, len(trainset)))
+                batch_images = []
+                batch_labels = []
+                
+                # Collect batch
+                for j in range(i, batch_end):
+                    img, label = trainset[j]
+                    batch_images.append(img)
+                    batch_labels.append(label)
+                
+                # Process batch
+                if batch_images:
+                    batch_tensor = torch.stack(batch_images)
+                    batch_features = extractor._extract_batch(batch_tensor)
+                    
+                    # Store results
+                    for k, features in enumerate(batch_features):
+                        train_features.append(features.cpu().numpy())
+                        train_labels.append(batch_labels[k])
                 
                 if i % 1000 == 0:
                     print(f"Processed {i}/{subset_size_train} training images")
             
-            # Process test set (queries)
+            # Process test set (queries) with batch processing
             test_features = []
             test_labels = []
             
-            subset_size_test = min(1000, len(testset)) if subset_size else len(testset)
+            subset_size_test = min(500, len(testset)) if subset_size else len(testset)
             
-            print(f"Extracting features from {subset_size_test} test images...")
-            for i in range(subset_size_test):
-                img, label = testset[i]
-                features = extractor._extract_batch(img.unsqueeze(0))
-                test_features.append(features.cpu().numpy())
-                test_labels.append(label)
+            print(f"Extracting features from {subset_size_test} test images with batch size {batch_size}...")
+            
+            for i in range(0, subset_size_test, batch_size):
+                batch_end = min(i + batch_size, subset_size_test)
+                batch_images = []
+                batch_labels = []
+                
+                # Collect batch
+                for j in range(i, batch_end):
+                    img, label = testset[j]
+                    batch_images.append(img)
+                    batch_labels.append(label)
+                
+                # Process batch
+                if batch_images:
+                    batch_tensor = torch.stack(batch_images)
+                    batch_features = extractor._extract_batch(batch_tensor)
+                    
+                    # Store results
+                    for k, features in enumerate(batch_features):
+                        test_features.append(features.cpu().numpy())
+                        test_labels.append(batch_labels[k])
                 
                 if i % 100 == 0:
                     print(f"Processed {i}/{subset_size_test} test images")

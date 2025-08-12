@@ -13,8 +13,15 @@ from typing import List, Union, Tuple
 class ImageFeatureExtractor:
     """Extract dense features from images using pre-trained models"""
     
-    def __init__(self, model_name='clip', device='cuda', cache_dir='./models'):
-        self.device = device
+    def __init__(self, model_name='clip', device='auto', cache_dir='./models'):
+        # Auto-detect best device
+        if device == 'auto':
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        else:
+            self.device = device
+        
+        print(f"ImageFeatureExtractor using device: {self.device}")
+        
         self.model_name = model_name
         self.cache_dir = cache_dir
         os.makedirs(cache_dir, exist_ok=True)
