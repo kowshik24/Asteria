@@ -31,6 +31,15 @@ class RealImageExperiment:
         os.makedirs(save_dir, exist_ok=True)
         self.results = {}
         
+        # Check for optimization flags
+        self.fast_mode = os.getenv('ASTERIA_FAST_MODE', '0') == '1'
+        self.optimized = os.getenv('ASTERIA_OPTIMIZED', '0') == '1'
+        
+        if self.fast_mode:
+            print("🚀 Running in FAST MODE - using optimized parameters")
+        elif self.optimized:
+            print("⚡ Running in OPTIMIZED MODE - enhanced performance")
+        
     def setup_cifar10_experiment(self, 
                                 subset_size: Optional[int] = None,
                                 feature_model: str = 'resnet') -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -40,7 +49,12 @@ class RealImageExperiment:
         
         # Use smaller default subset for faster experimentation
         if subset_size is None:
-            subset_size = 5000  # Much smaller default for faster testing
+            if self.fast_mode:
+                subset_size = 2000  # Very fast for quick testing
+            elif self.optimized:
+                subset_size = 5000  # Balanced for optimized runs
+            else:
+                subset_size = 5000  # Standard smaller default
         
         try:
             import torchvision

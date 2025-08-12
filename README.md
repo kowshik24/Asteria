@@ -129,3 +129,47 @@ Repository skeleton
     docs: design and whitepaper
 
 Below are proposed starter files to bootstrap the project and document the method precisely.
+
+## 🚀 Quick Start
+
+### Installation
+```bash
+pip install -r requirements.txt
+```
+
+### Running Experiments
+
+**For quick validation (2-5 minutes):**
+```bash
+./run_fast_experiments.sh
+```
+
+**For optimized research (5-10 minutes):**
+```bash
+./run_optimized_experiments.sh
+```
+
+**For comprehensive research (15-30 minutes):**
+```bash
+./run_all_experiments.sh
+```
+
+**View speed comparison guide:**
+```bash
+./speed_guide.sh
+```
+
+### Research Results
+
+All experiments generate:
+- 📊 Performance metrics (QPS, Recall, Memory)
+- 📈 Publication-ready plots (PNG files)
+- 📄 Raw experimental data (JSON files)
+- 🎓 LaTeX tables for papers
+
+Results are saved in respective directories:
+- `real_image_results/` - CIFAR-10 experiments
+- `benchmark_results/` - Comprehensive benchmarking
+- `comparative_results/` - Baseline comparisons
+- `advanced_results/` - Parameter studies
+- `synthetic_results/` - Scalability testing

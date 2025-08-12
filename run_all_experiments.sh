@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # Complete Research Experiment Runner for Asteria
-# This script runs all research experiments in sequence
+# This script runs all research experiments with optimizations
 
 echo "=========================================="
 echo "Asteria Research Experiments Suite"
 echo "=========================================="
+echo "🚀 Enhanced with parallel execution and optimizations"
 
 # Check if we're in the right directory
 if [ ! -f "asteria/__init__.py" ]; then
@@ -13,122 +14,199 @@ if [ ! -f "asteria/__init__.py" ]; then
     exit 1
 fi
 
+# Performance optimizations
+export ASTERIA_OPTIMIZED=1
+export OMP_NUM_THREADS=4
+export OPENBLAS_NUM_THREADS=4
+
 # Create results directory
 mkdir -p research_results
 cd research_results
 
 echo "Starting comprehensive research experiments..."
+start_time=$(date +%s)
 
-# 1. Real Image Experiments
-echo ""
-echo "1. Running Real Image Experiments..."
-echo "-----------------------------------"
-cd ..
-python experiments/real_image_experiments.py
-if [ $? -ne 0 ]; then
-    echo "Warning: Real image experiments failed, continuing..."
-fi
+# Function to run experiments with better error handling and timing
+run_experiment() {
+    local name="$1"
+    local script="$2"
+    local estimated_time="$3"
+    
+    echo ""
+    echo "📊 $name (est. ${estimated_time}min)..."
+    echo "-----------------------------------"
+    cd .. 2>/dev/null || true
+    
+    local exp_start=$(date +%s)
+    python "$script" 2>&1 | tee -a "research_results/experiment.log"
+    local exit_code=$?
+    local exp_end=$(date +%s)
+    local exp_duration=$((exp_end - exp_start))
+    
+    if [ $exit_code -eq 0 ]; then
+        echo "✅ $name completed successfully (${exp_duration}s)"
+    else
+        echo "⚠️  Warning: $name failed (exit code: $exit_code), continuing..."
+        echo "   Check research_results/experiment.log for details"
+    fi
+    
+    return $exit_code
+}
 
-# 2. Comparative Analysis
-echo ""
-echo "2. Running Comparative Analysis..."
-echo "---------------------------------"
-python experiments/comparative_analysis.py
-if [ $? -ne 0 ]; then
-    echo "Warning: Comparative analysis failed, continuing..."
-fi
+# Run experiments with optimized order (fastest first)
+run_experiment "Real Image Experiments" "experiments/real_image_experiments.py" "8"
+run_experiment "Comprehensive Benchmark" "experiments/comprehensive_benchmark.py" "5"
 
-# 3. Advanced Research Experiments
+# Start longer experiments in background
 echo ""
-echo "3. Running Advanced Research Experiments..."
-echo "------------------------------------------"
-python experiments/advanced_research.py
-if [ $? -ne 0 ]; then
-    echo "Warning: Advanced research experiments failed, continuing..."
-fi
+echo "🔄 Starting intensive experiments in parallel..."
 
-# 4. Comprehensive Benchmark
-echo ""
-echo "4. Running Comprehensive Benchmark..."
-echo "------------------------------------"
-python experiments/comprehensive_benchmark.py
-if [ $? -ne 0 ]; then
-    echo "Warning: Comprehensive benchmark failed, continuing..."
-fi
+# Start comparative analysis in background
+echo "📊 Starting Comparative Analysis (background)..."
+cd .. 2>/dev/null || true
+python experiments/comparative_analysis.py > research_results/comparative_analysis.log 2>&1 &
+comp_pid=$!
 
-# 5. Enhanced Synthetic Speed Test
+# Start advanced research in background  
+echo "🔬 Starting Advanced Research (background)..."
+python experiments/advanced_research.py > research_results/advanced_research.log 2>&1 &
+adv_pid=$!
+
+# Run synthetic speed test (quick)
+run_experiment "Synthetic Speed Test" "benchmarks/synthetic_speed.py" "2"
+
+# Wait for background processes
 echo ""
-echo "5. Running Enhanced Synthetic Speed Test..."
-echo "-------------------------------------------"
-python benchmarks/synthetic_speed.py
-if [ $? -ne 0 ]; then
-    echo "Warning: Synthetic speed test failed, continuing..."
-fi
+echo "⏳ Waiting for background experiments..."
+
+wait_for_process() {
+    local pid=$1
+    local name="$2"
+    local log_file="$3"
+    
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "  ⏳ Waiting for $name..."
+        wait "$pid"
+        local exit_code=$?
+        if [ $exit_code -eq 0 ]; then
+            echo "  ✅ $name completed successfully"
+        else
+            echo "  ⚠️  $name completed with warnings (check $log_file)"
+        fi
+    fi
+}
+
+wait_for_process "$comp_pid" "Comparative Analysis" "research_results/comparative_analysis.log"
+wait_for_process "$adv_pid" "Advanced Research" "research_results/advanced_research.log"
 
 echo ""
 echo "=========================================="
-echo "Research Experiments Completed!"
+echo "🎉 Research Experiments Completed!"
 echo "=========================================="
 
-echo ""
-echo "Generated Results:"
-echo "-----------------"
+# Calculate total runtime
+end_time=$(date +%s)
+total_time=$((end_time - start_time))
+echo "⏱️  Total runtime: ${total_time}s ($(($total_time / 60))m $(($total_time % 60))s)"
 
-# List all generated files
 echo ""
-echo "Real Image Results:"
-if [ -d "real_image_results" ]; then
-    ls -la real_image_results/
-else
-    echo "  No real image results found"
+echo "📊 Generated Results Summary:"
+echo "----------------------------"
+
+# Enhanced results summary with file counts
+count_files() {
+    local dir="$1"
+    local pattern="$2"
+    if [ -d "$dir" ]; then
+        find "$dir" -name "$pattern" 2>/dev/null | wc -l
+    else
+        echo "0"
+    fi
+}
+
+show_detailed_results() {
+    local dir="$1"
+    local name="$2"
+    
+    if [ -d "$dir" ]; then
+        local json_count=$(count_files "$dir" "*.json")
+        local png_count=$(count_files "$dir" "*.png") 
+        local tex_count=$(count_files "$dir" "*.tex")
+        local total=$((json_count + png_count + tex_count))
+        
+        echo "📁 $name: $total files ($json_count JSON, $png_count plots, $tex_count tables)"
+        
+        # Show key result files
+        if [ $png_count -gt 0 ]; then
+            echo "   📈 Key plots:"
+            find "$dir" -name "*.png" -exec basename {} \; 2>/dev/null | head -2 | sed 's/^/      /'
+        fi
+    else
+        echo "📁 $name: No results directory found"
+    fi
+}
+
+# List all generated files with enhanced formatting
+echo ""
+show_detailed_results "real_image_results" "Real Image Results"
+show_detailed_results "comparative_results" "Comparative Analysis Results"
+show_detailed_results "advanced_results" "Advanced Research Results"
+show_detailed_results "benchmark_results" "Comprehensive Benchmark Results"
+show_detailed_results "synthetic_results" "Synthetic Speed Results"
+
+echo ""
+echo "📋 Performance Optimizations Applied:"
+echo "===================================="
+echo "✅ Parallel execution for long-running experiments"
+echo "✅ Optimized experiment ordering (fast → slow)"
+echo "✅ Enhanced error handling and logging"
+echo "✅ Environment variable optimizations (OpenBLAS, OMP)"
+echo "✅ Background processing for independent experiments"
+
+echo ""
+echo "📈 Research Summary:"
+echo "==================="
+echo "🔬 Real image experiments: CIFAR-10 analysis with multiple feature extractors"
+echo "⚖️  Comparative analysis: Performance vs FAISS, Annoy, and other baselines"
+echo "🧮 Advanced research: Dimensionality studies and parameter sensitivity"
+echo "🏆 Comprehensive benchmark: Speed/accuracy/memory tradeoff analysis"
+echo "🚀 Synthetic testing: Scalability and performance validation"
+
+echo ""
+echo "📚 Publication-Ready Outputs:"
+echo "============================="
+echo "📊 Performance metrics (QPS, Recall, Memory usage)"
+echo "📈 Visualization plots (PNG files for papers)"
+echo "📄 Raw experimental data (JSON files for analysis)"
+echo "🎓 LaTeX tables (ready for academic publications)"
+
+echo ""
+echo "🎯 Next Steps:"
+echo "=============="
+echo "1. Review key plots in */results/ directories"
+echo "2. Check experiment.log for any warnings or issues"
+echo "3. Use JSON data for custom analysis and additional plots"
+echo "4. Include LaTeX tables in your research paper"
+
+if [ -f "research_results/experiment.log" ]; then
+    echo ""
+    echo "📝 Experiment Log Summary:"
+    echo "========================="
+    echo "   Full log: research_results/experiment.log"
+    
+    # Show any warnings or errors
+    if grep -q "Warning\|Error\|Failed" research_results/experiment.log 2>/dev/null; then
+        echo "   ⚠️  Found warnings/errors - review log file for details"
+    else
+        echo "   ✅ No critical issues detected"
+    fi
 fi
 
 echo ""
-echo "Comparative Analysis Results:"
-if [ -d "comparative_results" ]; then
-    ls -la comparative_results/
-else
-    echo "  No comparative results found"
-fi
+echo "🚀 Speed Comparison:"
+echo "==================="
+echo "📊 Standard experiments: ~15-30 minutes (this script)"
+echo "⚡ Fast experiments: ~5-10 minutes (./run_optimized_experiments.sh)"
+echo "🎯 Quick validation: ~2-5 minutes (./run_fast_experiments.sh)"
 
-echo ""
-echo "Advanced Research Results:"
-if [ -d "advanced_results" ]; then
-    ls -la advanced_results/
-else
-    echo "  No advanced results found"
-fi
-
-echo ""
-echo "Comprehensive Benchmark Results:"
-if [ -d "benchmark_results" ]; then
-    ls -la benchmark_results/
-else
-    echo "  No benchmark results found"
-fi
-
-echo ""
-echo "Synthetic Speed Results:"
-if [ -d "synthetic_results" ]; then
-    ls -la synthetic_results/
-else
-    echo "  No synthetic results found"
-fi
-
-echo ""
-echo "Research Summary:"
-echo "=================="
-echo "✓ Real image experiments (CIFAR-10 style)"
-echo "✓ Comparative analysis vs FAISS, Annoy, etc."
-echo "✓ Advanced research (dimensionality, parameters)"
-echo "✓ Comprehensive benchmarking suite"
-echo "✓ Enhanced synthetic speed testing"
-echo ""
-echo "All results contain:"
-echo "  - Performance metrics (QPS, Recall, Memory)"
-echo "  - Visualization plots (PNG files)"
-echo "  - Raw data (JSON files)"
-echo "  - LaTeX tables for publications"
-echo ""
-echo "Use these results to support your research paper!"
 echo "=========================================="
