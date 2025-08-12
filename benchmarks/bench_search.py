@@ -33,9 +33,41 @@ def parse_args():
     ap.add_argument("--hamming_radius", type=int, default=1)
     ap.add_argument("--report", type=str, choices=["none","recall"], default="none")
     ap.add_argument("--device", type=str, default="cpu")
+    ap.add_argument("--max_eval_queries", type=int, default=1000, help="Max queries for recall evaluation (use -1 for all)")
     return ap.parse_args()
 
-def brute_force(db, q, k):
+def brute_force_gpu(db, q, k, device='cuda'):
+    """GPU-accelerated brute force search"""
+    if not torch.cuda.is_available():
+        print("CUDA not available, falling back to CPU")
+        return brute_force_cpu(db, q, k)
+    
+    # Convert to torch tensors on GPU
+    db_gpu = torch.tensor(db, dtype=torch.float32, device=device)
+    q_gpu = torch.tensor(q, dtype=torch.float32, device=device)
+    
+    # Compute similarities in batches to manage GPU memory
+    batch_size = min(1000, q.shape[0])  # Adjust based on GPU memory
+    n_queries = q.shape[0]
+    top_idx = torch.zeros((n_queries, k), dtype=torch.int64, device='cpu')
+    
+    print(f"Running GPU brute force with batch size {batch_size}...")
+    
+    for i in range(0, n_queries, batch_size):
+        end_i = min(i + batch_size, n_queries)
+        batch_q = q_gpu[i:end_i]
+        
+        # Compute similarities: batch_q @ db_gpu.T
+        sims = torch.mm(batch_q, db_gpu.T)
+        
+        # Get top-k indices
+        _, idx = torch.topk(sims, k=k, dim=1, largest=True, sorted=True)
+        top_idx[i:end_i] = idx.cpu()
+    
+    return top_idx.numpy()
+
+def brute_force_cpu(db, q, k):
+    """CPU fallback brute force search"""
     # db, q: numpy arrays normalized
     # Use batched processing to avoid memory issues
     batch_size = 1000
@@ -95,13 +127,28 @@ def main():
 
     if args.report == "recall":
         print("Computing brute force baseline (this may take a while)...")
-        # Use only first 1000 queries for recall evaluation to speed up
-        eval_queries = queries[:1000]
+        
+        # Determine how many queries to evaluate
+        if args.max_eval_queries == -1:
+            eval_queries = queries
+            print(f"Evaluating recall on all {len(queries)} queries")
+        else:
+            eval_queries = queries[:args.max_eval_queries]
+            print(f"Evaluating recall on {len(eval_queries)} queries")
+            
         db = np.stack([v.numpy() for v in index.db_vectors_full], axis=0)
         db = db / np.linalg.norm(db, axis=1, keepdims=True).clip(1e-9)
         
+        # Use GPU if available for much faster brute force computation
+        use_gpu = torch.cuda.is_available()
+        device = 'cuda' if use_gpu else 'cpu'
+        print(f"Using {'GPU' if use_gpu else 'CPU'} for brute force computation")
+        
         t2 = time.time()
-        bf = brute_force(db, eval_queries, args.k)
+        if use_gpu:
+            bf = brute_force_gpu(db, eval_queries, args.k, device)
+        else:
+            bf = brute_force_cpu(db, eval_queries, args.k)
         t3 = time.time()
         print(f"Brute force time for {eval_queries.shape[0]} queries: {t3-t2:.3f}s")
         
