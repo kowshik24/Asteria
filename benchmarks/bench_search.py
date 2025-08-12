@@ -8,6 +8,13 @@ Usage:
   python benchmarks/bench_search.py --model asteria_model.pt --index index_state.pt \
      --queries queries.npy --k 10 --hamming_radius 1 --report recall
 """
+
+import sys
+import os
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 import argparse
 import time
 import numpy as np
