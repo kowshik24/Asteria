@@ -78,7 +78,7 @@ def main():
         index.add(db_t)
     elif args.index_state:
         # Loading saved raw vectors is simpler than reconstructing buckets; re-add.
-        st = torch.load(args.index_state, map_location="cpu")
+        st = torch.load(args.index_state, map_location="cpu", weights_only=False)
         db = np.stack(st["index_vectors_full"], axis=0)
         db_t = torch.tensor(db, dtype=torch.float32)
         index = AsteriaIndexCPU(bundle, device=device)
