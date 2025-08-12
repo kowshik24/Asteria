@@ -8,6 +8,11 @@ Usage:
   python scripts/build_index.py --model asteria_model.pt \
       --db_embeddings db.npy --out index_state.pt
 """
+import sys
+import os
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import argparse
 import numpy as np
 import torch
