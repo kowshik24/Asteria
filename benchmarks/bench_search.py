@@ -46,16 +46,9 @@ def brute_force(db, q, k):
 
 def main():
     args = parse_args()
-    full_ckpt = torch.load(args.model, map_location=args.device)
-    print(f"Available keys in checkpoint: {list(full_ckpt.keys())}")
+    ckpt = torch.load(args.model, map_location=args.device)
+    print(f"Available keys in checkpoint: {list(ckpt.keys())}")
     
-    # Try to access the model data - handle different possible structures
-    if "model" in full_ckpt:
-        ckpt = full_ckpt["model"]
-    else:
-        ckpt = full_ckpt
-    
-    print(f"Model data keys: {list(ckpt.keys())}")
     cfg = ckpt["config"]
     bor = ButterflyRotation(cfg["dim"])
     bor.load_state_dict(ckpt["bor"])
@@ -64,7 +57,8 @@ def main():
     lrsq = LRSQ(cfg["dim"], cfg["rank"], cfg["blocks"])
     lrsq.load_state_dict(ckpt["lrsq"])
 
-    idx_state = torch.load(args.index, map_location="cpu")
+    # Load index with weights_only=False to handle numpy arrays
+    idx_state = torch.load(args.index, map_location="cpu", weights_only=False)
     bundle = {"bor": bor, "ecvh": ecvh, "lrsq": lrsq}
     index = AsteriaIndexCPU(bundle, device=args.device)
     # restore data
