@@ -46,7 +46,16 @@ def brute_force(db, q, k):
 
 def main():
     args = parse_args()
-    ckpt = torch.load(args.model, map_location=args.device)["model"]
+    full_ckpt = torch.load(args.model, map_location=args.device)
+    print(f"Available keys in checkpoint: {list(full_ckpt.keys())}")
+    
+    # Try to access the model data - handle different possible structures
+    if "model" in full_ckpt:
+        ckpt = full_ckpt["model"]
+    else:
+        ckpt = full_ckpt
+    
+    print(f"Model data keys: {list(ckpt.keys())}")
     cfg = ckpt["config"]
     bor = ButterflyRotation(cfg["dim"])
     bor.load_state_dict(ckpt["bor"])
