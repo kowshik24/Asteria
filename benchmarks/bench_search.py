@@ -46,12 +46,18 @@ def brute_force_gpu(db, q, k, device='cuda'):
     db_gpu = torch.tensor(db, dtype=torch.float32, device=device)
     q_gpu = torch.tensor(q, dtype=torch.float32, device=device)
     
-    # Compute similarities in batches to manage GPU memory
-    batch_size = min(1000, q.shape[0])  # Adjust based on GPU memory
+    # Adaptive batch size based on GPU memory and data size
+    # For Colab T4 (16GB), we can handle larger batches
+    if q.shape[0] <= 5000:
+        batch_size = min(2000, q.shape[0])  # Larger batch for smaller query sets
+    else:
+        batch_size = min(1000, q.shape[0])  # Conservative for large query sets
+    
     n_queries = q.shape[0]
     top_idx = torch.zeros((n_queries, k), dtype=torch.int64, device='cpu')
     
     print(f"Running GPU brute force with batch size {batch_size}...")
+    print(f"GPU memory available: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
     
     for i in range(0, n_queries, batch_size):
         end_i = min(i + batch_size, n_queries)
@@ -63,6 +69,10 @@ def brute_force_gpu(db, q, k, device='cuda'):
         # Get top-k indices
         _, idx = torch.topk(sims, k=k, dim=1, largest=True, sorted=True)
         top_idx[i:end_i] = idx.cpu()
+        
+        # Clear GPU cache periodically
+        if i % (batch_size * 5) == 0:
+            torch.cuda.empty_cache()
     
     return top_idx.numpy()
 
@@ -86,80 +96,94 @@ def brute_force_cpu(db, q, k):
     
     return top_idx
 
+def brute_force(db, q, k):
+    sims = q @ db.T
+    idx = np.argpartition(-sims, kth=k-1, axis=1)[:, :k]
+    part = np.take_along_axis(sims, idx, axis=1)
+    order = np.argsort(-part, axis=1)
+    top_idx = np.take_along_axis(idx, order, axis=1)
+    return top_idx
+
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", type=str, required=True)
+    ap.add_argument("--index_embeddings", type=str, required=False,
+                    help="If provided rebuild index on-the-fly from embeddings (npy).")
+    ap.add_argument("--index_state", type=str, required=False,
+                    help="If not rebuilding, provide saved index state.")
+    ap.add_argument("--queries", type=str, required=True)
+    ap.add_argument("--k", type=int, default=10)
+    ap.add_argument("--sample_queries", type=int, default=1000,
+                    help="For brute force recall eval; speeds up large Q sets.")
+    ap.add_argument("--max_radius", type=int, default=2)
+    ap.add_argument("--target_mult", type=int, default=8)
+    ap.add_argument("--no_fallback", action="store_true")
+    ap.add_argument("--device", type=str, default="cpu")
+    return ap.parse_args()
+
+def load_model(model_path, device):
+    ck = torch.load(model_path, map_location=device)
+    cfg = ck["config"]
+    bor = ButterflyRotation(cfg["dim"])
+    bor.load_state_dict(ck["bor"])
+    ecvh = ECVH(cfg["dim"],
+                cfg["m_vantages"],
+                cfg["raw_bits"],
+                cfg["code_bits"])
+    ecvh.load_state_dict(ck["ecvh"])
+    lrsq = LRSQ(cfg["dim"], cfg["rank"], cfg["blocks"])
+    lrsq.load_state_dict(ck["lrsq"])
+    return bor, ecvh, lrsq, cfg
+
 def main():
     args = parse_args()
-    print(f"Loading model from {args.model}...")
-    ckpt = torch.load(args.model, map_location=args.device)
-    
-    cfg = ckpt["config"]
-    bor = ButterflyRotation(cfg["dim"])
-    bor.load_state_dict(ckpt["bor"])
-    ecvh = ECVH(cfg["dim"], cfg["m_vantages"], cfg["k_raw"], cfg["m_code"])
-    ecvh.load_state_dict(ckpt["ecvh"])
-    lrsq = LRSQ(cfg["dim"], cfg["rank"], cfg["blocks"])
-    lrsq.load_state_dict(ckpt["lrsq"])
+    device = args.device
+    bor, ecvh, lrsq, cfg = load_model(args.model, device)
 
-    print(f"Loading index from {args.index}...")
-    idx_state = torch.load(args.index, map_location="cpu", weights_only=False)
     bundle = {"bor": bor, "ecvh": ecvh, "lrsq": lrsq}
-    index = AsteriaIndexCPU(bundle, device=args.device)
-    
-    # restore data
-    index.db_vectors_full = [torch.tensor(v) for v in idx_state["index_vectors_full"]]
-    index.db_proj_codes = [torch.tensor(c) for c in idx_state["index_proj_codes"]]
-    index.ids = idx_state["ids"]
-    index.bucket_map = idx_state["bucket_map"]
-    
-    print(f"Database size: {len(index.db_vectors_full)} vectors")
 
-    print(f"Loading queries from {args.queries}...")
+    if args.index_embeddings:
+        emb = np.load(args.index_embeddings)
+        db_t = torch.tensor(emb, dtype=torch.float32)
+        index = AsteriaIndexCPU(bundle, device=device)
+        index.add(db_t)
+    elif args.index_state:
+        # Loading saved raw vectors is simpler than reconstructing buckets; re-add.
+        st = torch.load(args.index_state, map_location="cpu")
+        db = np.stack(st["index_vectors_full"], axis=0)
+        db_t = torch.tensor(db, dtype=torch.float32)
+        index = AsteriaIndexCPU(bundle, device=device)
+        index.add(db_t, ids=st["ids"])
+    else:
+        raise ValueError("Provide either --index_embeddings or --index_state")
+
     queries = np.load(args.queries)
-    queries = queries / np.linalg.norm(queries, axis=1, keepdims=True).clip(1e-9)
     q_t = torch.tensor(queries, dtype=torch.float32)
-    print(f"Query set size: {queries.shape[0]} vectors")
 
-    print("Running Asteria search...")
+    # Run search
     t0 = time.time()
-    D, I = index.search(q_t, k=args.k, hamming_radius=args.hamming_radius)
+    D, I = index.search(q_t,
+                        k=args.k,
+                        target_mult=args.target_mult,
+                        max_radius=args.max_radius,
+                        brute_force_fallback=not args.no_fallback)
     t1 = time.time()
-    qps = queries.shape[0] / (t1 - t0)
-    print(f"Search time: {t1 - t0:.3f}s  QPS: {qps:.2f}")
+    print(f"Search time: {t1 - t0:.3f}s  QPS: {queries.shape[0] / (t1 - t0):.2f}")
 
-    if args.report == "recall":
-        print("Computing brute force baseline (this may take a while)...")
-        
-        # Determine how many queries to evaluate
-        if args.max_eval_queries == -1:
-            eval_queries = queries
-            print(f"Evaluating recall on all {len(queries)} queries")
-        else:
-            eval_queries = queries[:args.max_eval_queries]
-            print(f"Evaluating recall on {len(eval_queries)} queries")
-            
-        db = np.stack([v.numpy() for v in index.db_vectors_full], axis=0)
-        db = db / np.linalg.norm(db, axis=1, keepdims=True).clip(1e-9)
-        
-        # Use GPU if available for much faster brute force computation
-        use_gpu = torch.cuda.is_available()
-        device = 'cuda' if use_gpu else 'cpu'
-        print(f"Using {'GPU' if use_gpu else 'CPU'} for brute force computation")
-        
-        t2 = time.time()
-        if use_gpu:
-            bf = brute_force_gpu(db, eval_queries, args.k, device)
-        else:
-            bf = brute_force_cpu(db, eval_queries, args.k)
-        t3 = time.time()
-        print(f"Brute force time for {eval_queries.shape[0]} queries: {t3-t2:.3f}s")
-        
-        # Recall@k on subset
-        hits = 0
-        for i in range(eval_queries.shape[0]):
-            truth = set(bf[i].tolist())
-            got = set(I[i][I[i] >= 0].tolist())
-            hits += len(truth & got) / len(truth)
-        recall = hits / eval_queries.shape[0]
-        print(f"Recall@{args.k} (on {eval_queries.shape[0]} queries): {recall:.4f}")
+    # Recall evaluation (sample subset)
+    sample = min(args.sample_queries, queries.shape[0])
+    sel = np.random.choice(queries.shape[0], sample, replace=False)
+    db = np.stack([v.numpy() for v in index.db_vectors_full], axis=0)
+    db = db / np.linalg.norm(db, axis=1, keepdims=True)
+    q_norm = queries / np.linalg.norm(queries, axis=1, keepdims=True)
+    bf_idx = brute_force(db, q_norm[sel], args.k)
+    hits = 0
+    for i, qi in enumerate(sel):
+        truth = set(bf_idx[i].tolist())
+        got = set(I[qi][I[qi] >= 0].tolist())
+        hits += len(truth & got) / len(truth)
+    recall = hits / sample
+    print(f"Sampled Recall@{args.k} (n={sample}): {recall:.4f}")
 
 if __name__ == "__main__":
     main()

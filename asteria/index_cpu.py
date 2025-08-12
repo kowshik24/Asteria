@@ -6,15 +6,31 @@ from collections import defaultdict
 from .bor import ButterflyRotation
 from .ecvh import ECVH
 from .lrsq import LRSQ
-from .utils import hamming_neighbors, pack_bits
+from .utils import pack_bits
+import itertools
+
+def enumerate_hamming(code_bits, radius):
+    """
+    Efficient generator of bit flips up to given radius.
+    code_bits: 1D tensor/list of {0,1}
+    """
+    m = len(code_bits)
+    yield code_bits  # distance 0
+    if radius == 0: 
+        return
+    idxs = list(range(m))
+    for r in range(1, radius + 1):
+        for comb in itertools.combinations(idxs, r):
+            nb = list(code_bits)
+            for c in comb:
+                nb[c] = 1 - nb[c]
+            yield nb
 
 class AsteriaIndexCPU:
     """
-    Minimal CPU-only prototype:
-      - Stores original full vectors (optional) + low-rank quantized.
-      - Buckets by encoded ECVH code (packed integer).
-      - Brute-force inside buckets + Hamming expansion.
-    Optimizations (SIMD, CAPRG graph, bound pruning) are not yet implemented.
+    Improved CPU prototype with:
+    - Adaptive radius escalation
+    - Fallback brute-force if candidate set too small
     """
     def __init__(self, model_bundle: dict, device='cpu'):
         self.device = device
@@ -22,11 +38,9 @@ class AsteriaIndexCPU:
         self.hash: ECVH = model_bundle['ecvh'].to(device).eval()
         self.lrsq: LRSQ = model_bundle['lrsq'].to(device).eval()
         self.dim = self.rotation.original_dim
-        self.rank = self.lrsq.rank
-        self.db_vectors_full = []   # (optional) list of full float32 vectors
-        self.db_proj_codes = []     # quantized low-rank codes
+        self.db_vectors_full = []   # list of tensors (normalized)
         self.ids = []
-        self.bucket_map = defaultdict(list)  # code -> list of index positions
+        self.bucket_map = defaultdict(list)  # packed_code -> list of global indices
 
     @torch.no_grad()
     def add(self, vectors: torch.Tensor, ids=None, batch=4096):
@@ -37,53 +51,84 @@ class AsteriaIndexCPU:
 
         for start in range(0, N, batch):
             chunk = vectors[start:start+batch]
-            # Normalize
             chunk = chunk / chunk.norm(dim=1, keepdim=True).clamp_min(1e-9)
             rot = self.rotation(chunk)
-            codes = self.hash(rot)
-            proj = self.lrsq(rot)
-            qcodes = self.lrsq.quantize(proj)
-
+            codes = self.hash(rot)  # (B, m_code)
             for i in range(chunk.size(0)):
-                cbits = codes[i].cpu().numpy().astype(int).tolist()
-                packed = pack_bits(cbits)
-                global_idx = len(self.ids)
-                self.bucket_map[packed].append(global_idx)
+                bits = codes[i].cpu().numpy().astype(int).tolist()
+                packed = pack_bits(bits)
+                g_idx = len(self.ids)
+                self.bucket_map[packed].append(g_idx)
                 self.db_vectors_full.append(chunk[i].cpu())
-                self.db_proj_codes.append(qcodes[i].cpu())
-                self.ids.append(int(ids[start+i]))
+                self.ids.append(int(ids[start + i]))
+
+    def _gather_candidates(self, bits_list, min_candidates, max_radius):
+        """
+        Escalate radius until candidate count >= min_candidates or radius > max_radius.
+        """
+        m_code = len(bits_list)
+        for radius in range(0, max_radius + 1):
+            cands = set()
+            for nb in enumerate_hamming(bits_list, radius):
+                packed = pack_bits(nb)
+                if packed in self.bucket_map:
+                    cands.update(self.bucket_map[packed])
+            if len(cands) >= min_candidates or radius == max_radius:
+                return list(cands), radius
+        return [], max_radius
 
     @torch.no_grad()
-    def search(self, queries: torch.Tensor, k=10, hamming_radius=1, batch=1024):
+    def search(self,
+               queries: torch.Tensor,
+               k=10,
+               target_mult=8,
+               max_radius=3,
+               brute_force_fallback=True,
+               batch=512):
+        """
+        target_mult: minimum candidate count = k * target_mult before we stop expanding radius.
+        max_radius: cap on Hamming expansion.
+        brute_force_fallback: if after max_radius expansion < k candidates, fallback to brute-force full DB.
+
+        Returns (scores, ids)
+        """
         queries = queries.to(self.device)
         Q = queries.shape[0]
-        all_scores = torch.full((Q, k), -1.0, device=self.device)
-        all_ids = torch.full((Q, k), -1, dtype=torch.long, device=self.device)
+        db_mat = torch.stack(self.db_vectors_full, dim=0).to(self.device)  # (N,d)
+
+        out_scores = torch.full((Q, k), -1.0, device=self.device)
+        out_ids = torch.full((Q, k), -1, dtype=torch.long, device=self.device)
 
         for start in range(0, Q, batch):
             chunk = queries[start:start+batch]
             chunk = chunk / chunk.norm(dim=1, keepdim=True).clamp_min(1e-9)
             rot = self.rotation(chunk)
             codes = self.hash(rot)
-            proj = self.lrsq(rot)
-            # (For this minimal prototype we will re-score using full uncompressed vectors)
+
             for qi in range(chunk.size(0)):
-                cbits = codes[qi].cpu().numpy().astype(int).tolist()
-                neigh_codes = hamming_neighbors(cbits, hamming_radius, max_bits=len(cbits))
-                candidates = set()
-                for nb in neigh_codes:
-                    packed = pack_bits(nb)
-                    if packed in self.bucket_map:
-                        candidates.update(self.bucket_map[packed])
-                if not candidates:
+                bits = codes[qi].cpu().numpy().astype(int).tolist()
+                cand_idx, used_radius = self._gather_candidates(
+                    bits,
+                    min_candidates=k * target_mult,
+                    max_radius=max_radius
+                )
+                if len(cand_idx) < k and brute_force_fallback:
+                    # Full brute-force
+                    sims = (chunk[qi:qi+1] @ db_mat.t()).squeeze(0)
+                    top = torch.topk(sims, k=min(k, sims.numel()))
+                    out_scores[start+qi, :top.indices.numel()] = top.values
+                    chosen_ids = [self.ids[i] for i in top.indices.tolist()]
+                    out_ids[start+qi, :len(chosen_ids)] = torch.tensor(chosen_ids, device=self.device)
                     continue
-                cand_idx = list(candidates)
-                cand_vecs = torch.stack([self.db_vectors_full[c] for c in cand_idx]).to(self.device)
-                qv = chunk[qi:qi+1]
-                scores = (qv @ cand_vecs.t()).squeeze(0)  # cosine since normalized
-                topk = torch.topk(scores, k=min(k, scores.numel()))
-                all_scores[start+qi, :topk.indices.numel()] = topk.values
-                # map back to ids
-                sel_ids = [self.ids[cand_idx[j]] for j in topk.indices.tolist()]
-                all_ids[start+qi, :len(sel_ids)] = torch.tensor(sel_ids, device=self.device)
-        return all_scores.cpu().numpy(), all_ids.cpu().numpy()
+
+                if not cand_idx:
+                    continue
+
+                cand_t = db_mat[cand_idx]
+                sims = (chunk[qi:qi+1] @ cand_t.t()).squeeze(0)
+                top = torch.topk(sims, k=min(k, sims.numel()))
+                out_scores[start+qi, :top.indices.numel()] = top.values
+                chosen_ids = [self.ids[cand_idx[j]] for j in top.indices.tolist()]
+                out_ids[start+qi, :len(chosen_ids)] = torch.tensor(chosen_ids, device=self.device)
+
+        return out_scores.cpu().numpy(), out_ids.cpu().numpy()

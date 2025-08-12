@@ -14,16 +14,20 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 """
-Joint training loop (prototype) for BOR + ECVH + LRSQ projection.
+Improved joint training including stronger hashing loss.
 
-Added:
-  --anomaly flag to help debug autograd
-  Optional gradient check utility (run once at start if --grad_check)
+Key changes:
+- Uses sign_pair_loss instead of raw_margin_loss.
+- Uses bit balance on raw logits.
+- Adds --code_bits (m_code) and --raw_bits (k_raw) so you can shorten codes
+  for small toy datasets (e.g., --raw_bits 32 --code_bits 32).
+- Adds structured synthetic augmentation option (--synthetic_clusters) for better signal
+  if your training data is random Gaussian.
 """
+
 import argparse
 import numpy as np
 import torch
-import torch.nn.functional as F
 import torch.optim as optim
 from asteria.bor import ButterflyRotation
 from asteria.ecvh import ECVH
@@ -36,31 +40,49 @@ def parse_args():
     ap.add_argument("--dim", type=int, required=True)
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--batch_size", type=int, default=1024)
-    ap.add_argument("--lr", type=float, default=5e-3)
+    ap.add_argument("--lr", type=float, default=3e-3)
     ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--m_vantages", type=int, default=160)
-    ap.add_argument("--k_raw", type=int, default=96)
-    ap.add_argument("--m_code", type=int, default=128)
-    ap.add_argument("--rank", type=int, default=96)
-    ap.add_argument("--blocks", type=int, default=24)
+    ap.add_argument("--m_vantages", type=int, default=128)
+    ap.add_argument("--raw_bits", type=int, default=64, help="k_raw")
+    ap.add_argument("--code_bits", type=int, default=64, help="m_code")
+    ap.add_argument("--rank", type=int, default=64)
+    ap.add_argument("--blocks", type=int, default=16)
     ap.add_argument("--save_model", type=str, default="asteria_model.pt")
-    ap.add_argument("--steps_per_epoch", type=int, default=500)
+    ap.add_argument("--steps_per_epoch", type=int, default=400)
+    ap.add_argument("--orth_openalty_weight", type=float, default=0.01)
+    ap.add_argument("--quant_weight", type=float, default=0.5)
+    ap.add_argument("--balance_weight", type=float, default=0.2)
+    ap.add_argument("--sign_pair_weight", type=float, default=1.0)
+    ap.add_argument("--pos_margin", type=float, default=0.8)
+    ap.add_argument("--neg_margin", type=float, default=0.2)
+    ap.add_argument("--synthetic_clusters", action="store_true",
+                    help="Augment with random cluster shifts if data is random.")
+    ap.add_argument("--augment_factor", type=int, default=2)
     ap.add_argument("--anomaly", action="store_true")
-    ap.add_argument("--grad_check", action="store_true")
     return ap.parse_args()
 
-def gradient_smoke_test(bor, dim, device):
-    x = torch.randn(8, dim, device=device, requires_grad=True)
-    y = bor(x)
-    loss = y.pow(2).sum()
-    loss.backward()
-    print("[Gradient smoke test] Success: BOR backward completed.")
+def maybe_augment_clusters(x, factor=2):
+    """
+    Creates mild clustered structure:
+      - Sample C cluster centers
+      - For each sample, add small pull toward one center
+    """
+    if factor <= 1:
+        return x
+    B, D = x.shape
+    C = max(4, B // 256)
+    centers = torch.randn(C, D, device=x.device)
+    centers = centers / centers.norm(dim=1, keepdim=True)
+    assign = torch.randint(0, C, (B,), device=x.device)
+    alpha = 0.3
+    x_aug = x + alpha * centers[assign]
+    x_aug = x_aug / x_aug.norm(dim=1, keepdim=True).clamp_min(1e-9)
+    return x_aug
 
 def main():
     args = parse_args()
     if args.anomaly:
         torch.autograd.set_detect_anomaly(True)
-        print("Anomaly detection ENABLED (will slow training).")
 
     device = args.device
     emb = np.load(args.train_embeddings)
@@ -68,60 +90,65 @@ def main():
     data = torch.tensor(emb, dtype=torch.float32, device=device)
 
     bor = ButterflyRotation(args.dim, device=device)
-    ecvh = ECVH(args.dim, args.m_vantages, args.k_raw, args.m_code, device=device)
+    ecvh = ECVH(args.dim,
+                m_vantages=args.m_vantages,
+                k_raw=args.raw_bits,
+                m_code=args.code_bits,
+                device=device)
     lrsq = LRSQ(args.dim, rank=args.rank, blocks=args.blocks, device=device)
-
-    if args.grad_check:
-        gradient_smoke_test(bor, args.dim, device)
 
     params = list(bor.parameters()) + list(ecvh.parameters()) + list(lrsq.parameters())
     opt = optim.Adam(params, lr=args.lr)
 
-    for epoch in range(args.epochs):
+    for epoch in range(1, args.epochs + 1):
         bor.train(); ecvh.train(); lrsq.train()
-        losses = []
-        for step in range(args.steps_per_epoch):
+        loss_tracker = []
+        for step in range(1, args.steps_per_epoch + 1):
             batch_idx = torch.randint(0, data.size(0), (args.batch_size,), device=device)
             x = data[batch_idx]
             x = x / x.norm(dim=1, keepdim=True).clamp_min(1e-9)
+            if args.synthetic_clusters:
+                x = maybe_augment_clusters(x, args.augment_factor)
 
             x_rot = bor(x)
             code_bits, raw_logits = ecvh(x_rot, return_logits=True)
             proj = lrsq(x_rot)
 
-            pos_mask, neg_mask = mine_pairs(x.detach())
+            pos_mask, neg_mask = mine_pairs(x.detach(), top_k=5)
 
-            balance_loss = ecvh.bit_balance_loss(code_bits)
-            hash_margin = ecvh.raw_margin_loss(raw_logits, pos_mask, neg_mask, margin=0.6)
-
-            # Quantization round-trip (stop grad through codes)
+            # Loss components
+            sign_pair = ecvh.sign_pair_loss(raw_logits,
+                                            pos_mask,
+                                            neg_mask,
+                                            pos_margin=args.pos_margin,
+                                            neg_margin=args.neg_margin)
+            balance = ecvh.bit_balance_loss(raw_logits)
+            # Quantization (detach projection for codes; gradient flows into lrsq.P via proj)
             q_codes = lrsq.quantize(proj.detach())
             recon = lrsq.dequantize(q_codes)
-            quant_loss = (proj - recon).pow(2).mean()
+            quant = (proj - recon).pow(2).mean()
+            ortho = bor.orthogonality_penalty(num_samples=min(128, args.dim))
 
-            ortho_pen = bor.orthogonality_penalty(num_samples=min(128, args.dim))
-
-            total = (1.0 * hash_margin +
-                     0.2 * balance_loss +
-                     0.5 * quant_loss +
-                     0.01 * ortho_pen)
+            total = (args.sign_pair_weight * sign_pair +
+                     args.balance_weight * balance +
+                     args.quant_weight * quant +
+                     args.orth_openalty_weight * ortho)
 
             opt.zero_grad()
             total.backward()
             torch.nn.utils.clip_grad_norm_(params, 5.0)
             opt.step()
 
-            # Re-orthonormalize LRSQ rows periodically
             if step % 50 == 0:
                 lrsq.reorthonormalize()
 
-            losses.append(float(total))
-            if (step + 1) % 50 == 0:
-                print(f"Epoch {epoch+1} Step {step+1}/{args.steps_per_epoch} "
-                      f"Loss {np.mean(losses):.4f} "
-                      f"HMargin {hash_margin.item():.3f} Bal {balance_loss.item():.3f} "
-                      f"Q {quant_loss.item():.3f} Ortho {ortho_pen.item():.4f}")
-                losses = []
+            loss_tracker.append(float(total))
+            if step % 50 == 0:
+                print(f"Epoch {epoch} Step {step}/{args.steps_per_epoch} "
+                      f"Loss {np.mean(loss_tracker):.4f} "
+                      f"SignPair {sign_pair.item():.3f} Bal {balance.item():.3f} "
+                      f"Q {quant.item():.3f} Ortho {ortho.item():.4f}")
+                loss_tracker = []
 
         torch.save({
             "bor": bor.state_dict(),
@@ -129,7 +156,7 @@ def main():
             "lrsq": lrsq.state_dict(),
             "config": vars(args)
         }, args.save_model)
-        print(f"[Epoch {epoch+1}] Saved model -> {args.save_model}")
+        print(f"[Epoch {epoch}] Saved -> {args.save_model}")
 
     print("Training complete.")
 
