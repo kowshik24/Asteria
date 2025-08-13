@@ -9,10 +9,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import numpy as np
 import time
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for server environments
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional
 import json
 from pathlib import Path
+import argparse
 
 # Asteria imports
 from asteria.bor import ButterflyRotation
@@ -529,23 +532,51 @@ class RealImageExperiment:
 def main():
     """Run real image experiments"""
     
-    experiment = RealImageExperiment()
+    parser = argparse.ArgumentParser(description='Real Image Experiments for Asteria')
+    parser.add_argument('--fast-mode', action='store_true', 
+                       help='Run in fast mode with reduced dataset sizes')
+    parser.add_argument('--output-dir', type=str, default='research_results_optimized/real_image_results',
+                       help='Output directory for results')
+    
+    args = parser.parse_args()
+    
+    # Set environment variables based on arguments
+    if args.fast_mode:
+        os.environ['ASTERIA_FAST_MODE'] = '1'
+        os.environ['ASTERIA_SMALL_DATASETS'] = '1'
+    
+    experiment = RealImageExperiment(args.output_dir)
     
     print("Starting real image experiments...")
     
-    # 1. CIFAR-10 experiment
-    print("\n1. Running CIFAR-10 experiment...")
-    experiment.run_cifar10_experiment(subset_size=10000, feature_model='resnet')
+    # Adjust parameters based on fast mode
+    if args.fast_mode or experiment.fast_mode:
+        subset_size = 2000
+        max_db_size = 10000
+        print("🚀 Running in FAST MODE - using reduced dataset sizes")
+    else:
+        subset_size = 10000
+        max_db_size = 50000
     
-    # 2. Scalability study
-    print("\n2. Running scalability study...")
-    experiment.run_scalability_study(max_db_size=50000)
-    
-    # Save results and generate summary
-    experiment.save_results()
-    experiment.generate_summary()
-    
-    print(f"\nReal image experiments completed! Results saved in '{experiment.save_dir}' directory.")
+    try:
+        # 1. CIFAR-10 experiment
+        print("\n1. Running CIFAR-10 experiment...")
+        experiment.run_cifar10_experiment(subset_size=subset_size, feature_model='resnet')
+        
+        # 2. Scalability study
+        print("\n2. Running scalability study...")
+        experiment.run_scalability_study(max_db_size=max_db_size)
+        
+        # Save results and generate summary
+        experiment.save_results()
+        experiment.generate_summary()
+        
+        print(f"\nReal image experiments completed! Results saved in '{experiment.save_dir}' directory.")
+    except Exception as e:
+        print(f"Error in real image experiments: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

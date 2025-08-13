@@ -9,10 +9,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import numpy as np
 import time
-import matplotlib.pyplot as plt
-import seaborn as sns
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-interactive backend for server environments
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    PLOTTING_AVAILABLE = True
+except ImportError:
+    PLOTTING_AVAILABLE = False
+    print("Warning: matplotlib/seaborn not available. Plots will be skipped.")
+
 from typing import Dict, List, Tuple
 import json
+import argparse
 
 from asteria.bor import ButterflyRotation
 from asteria.ecvh import ECVH
@@ -20,8 +29,9 @@ from asteria.lrsq import LRSQ
 from asteria.index_cpu import AsteriaIndexCPU
 
 # Set style for better plots
-plt.style.use('seaborn-v0_8' if 'seaborn-v0_8' in plt.style.available else 'default')
-sns.set_palette("husl")
+if PLOTTING_AVAILABLE:
+    plt.style.use('seaborn-v0_8' if 'seaborn-v0_8' in plt.style.available else 'default')
+    sns.set_palette("husl")
 
 class SyntheticBenchmark:
     """Enhanced synthetic benchmark with comprehensive analysis"""
@@ -161,7 +171,8 @@ class SyntheticBenchmark:
                 continue
         
         self.results['scale_benchmark'] = results
-        self._plot_scale_results(results)
+        if PLOTTING_AVAILABLE:
+            self._plot_scale_results(results)
         return results
     
     def run_parameter_sweep(self, 
@@ -204,7 +215,8 @@ class SyntheticBenchmark:
                 continue
         
         self.results['parameter_sweep'] = results
-        self._plot_parameter_sweep_results(results)
+        if PLOTTING_AVAILABLE:
+            self._plot_parameter_sweep_results(results)
         return results
     
     def run_dimension_study(self, 
@@ -218,6 +230,12 @@ class SyntheticBenchmark:
         results = []
         for dim in dimensions:
             try:
+                # Calculate adaptive rank and ensure divisibility by blocks
+                base_rank = min(48, dim // 16)
+                blocks = 12
+                # Ensure rank is divisible by blocks
+                rank = ((base_rank // blocks) + 1) * blocks if base_rank % blocks != 0 else base_rank
+                
                 result = self.run_single_test(
                     dim=dim,
                     db_size=db_size,
@@ -226,8 +244,8 @@ class SyntheticBenchmark:
                         'm_vantages': min(48, dim // 16),  # Adaptive based on dimension
                         'raw_bits': 32,
                         'code_bits': 32,
-                        'rank': min(48, dim // 16),
-                        'blocks': 12,
+                        'rank': rank,
+                        'blocks': blocks,
                         'target_mult': 8,
                         'max_radius': 2
                     }
@@ -238,7 +256,8 @@ class SyntheticBenchmark:
                 continue
         
         self.results['dimension_study'] = results
-        self._plot_dimension_results(results)
+        if PLOTTING_AVAILABLE:
+            self._plot_dimension_results(results)
         return results
     
     def _estimate_memory(self, config: Dict, db_size: int, dim: int) -> float:
@@ -260,6 +279,9 @@ class SyntheticBenchmark:
     
     def _plot_scale_results(self, results: List[Dict]):
         """Plot scale benchmark results"""
+        if not PLOTTING_AVAILABLE:
+            print("Skipping scale results plot - matplotlib not available")
+            return
         
         db_sizes = [r['db_size'] for r in results]
         qps_values = [r['qps'] for r in results]
@@ -300,10 +322,14 @@ class SyntheticBenchmark:
         
         plt.tight_layout()
         plt.savefig(f'{self.save_dir}/scale_benchmark.png', dpi=300, bbox_inches='tight')
-        plt.show()
+        plt.close()  # Close the figure to free memory
+        print(f"Scale benchmark plot saved to {self.save_dir}/scale_benchmark.png")
     
     def _plot_parameter_sweep_results(self, results: List[Dict]):
         """Plot parameter sweep results"""
+        if not PLOTTING_AVAILABLE:
+            print("Skipping parameter sweep plot - matplotlib not available")
+            return
         
         config_names = [r['config_name'] for r in results]
         qps_values = [r['qps'] for r in results]
@@ -366,10 +392,14 @@ class SyntheticBenchmark:
         
         plt.tight_layout()
         plt.savefig(f'{self.save_dir}/parameter_sweep.png', dpi=300, bbox_inches='tight')
-        plt.show()
+        plt.close()  # Close the figure to free memory
+        print(f"Parameter sweep plot saved to {self.save_dir}/parameter_sweep.png")
     
     def _plot_dimension_results(self, results: List[Dict]):
         """Plot dimension study results"""
+        if not PLOTTING_AVAILABLE:
+            print("Skipping dimension results plot - matplotlib not available")
+            return
         
         dimensions = [r['dim'] for r in results]
         qps_values = [r['qps'] for r in results]
@@ -402,7 +432,8 @@ class SyntheticBenchmark:
         
         plt.tight_layout()
         plt.savefig(f'{self.save_dir}/dimension_study.png', dpi=300, bbox_inches='tight')
-        plt.show()
+        plt.close()  # Close the figure to free memory
+        print(f"Dimension study plot saved to {self.save_dir}/dimension_study.png")
     
     def save_results(self, filename: str = 'synthetic_benchmark_results.json'):
         """Save all results to JSON"""
@@ -446,43 +477,79 @@ class SyntheticBenchmark:
 def main():
     """Run comprehensive synthetic benchmarks"""
     
-    benchmark = SyntheticBenchmark()
+    parser = argparse.ArgumentParser(description='Synthetic Speed Benchmark for Asteria')
+    parser.add_argument('--fast-mode', action='store_true', 
+                       help='Run in fast mode with reduced dataset sizes')
+    parser.add_argument('--output-dir', type=str, default='research_results_optimized/synthetic_results',
+                       help='Output directory for results')
     
-    print("Starting comprehensive synthetic benchmarks...")
+    args = parser.parse_args()
     
-    # 1. Scale benchmark
-    print("\n1. Running scale benchmark...")
-    benchmark.run_scale_benchmark(
-        db_sizes=[1000, 5000, 10000, 25000, 50000, 100000],
-        dim=768,
-        query_size=1000
-    )
+    # Set environment variables based on arguments
+    if args.fast_mode:
+        os.environ['ASTERIA_FAST_MODE'] = '1'
+        os.environ['ASTERIA_SMALL_DATASETS'] = '1'
     
-    # 2. Parameter sweep
-    print("\n2. Running parameter sweep...")
-    benchmark.run_parameter_sweep(
-        db_size=50000,
-        dim=768,
-        query_size=1000
-    )
+    benchmark = SyntheticBenchmark(args.output_dir)
     
-    # 3. Dimension study
-    print("\n3. Running dimension study...")
-    benchmark.run_dimension_study(
-        dimensions=[128, 256, 512, 768, 1024],
-        db_size=20000,
-        query_size=1000
-    )
-    
-    # Save results and generate summary
-    benchmark.save_results()
-    benchmark.generate_summary_table()
-    
-    print(f"\nAll benchmarks completed! Results saved in '{benchmark.save_dir}' directory.")
-    print("Generated plots:")
-    print("- scale_benchmark.png")
-    print("- parameter_sweep.png") 
-    print("- dimension_study.png")
+    try:
+        print("Starting comprehensive synthetic benchmarks...")
+        
+        # Adjust parameters based on fast mode
+        if args.fast_mode or os.getenv('ASTERIA_FAST_MODE', '0') == '1':
+            print("🚀 Running in FAST MODE - using reduced dataset sizes")
+            db_sizes = [1000, 2500, 5000]
+            query_size = 200
+            dim = 512
+            dimensions = [256, 512]
+            db_size_param = 2500
+            db_size_dim = 2500
+        else:
+            db_sizes = [1000, 5000, 10000, 25000, 50000, 100000]
+            query_size = 1000
+            dim = 768
+            dimensions = [128, 256, 512, 768, 1024]
+            db_size_param = 50000
+            db_size_dim = 20000
+        
+        # 1. Scale benchmark
+        print("\n1. Running scale benchmark...")
+        benchmark.run_scale_benchmark(
+            db_sizes=db_sizes,
+            dim=dim,
+            query_size=query_size
+        )
+        
+        # 2. Parameter sweep
+        print("\n2. Running parameter sweep...")
+        benchmark.run_parameter_sweep(
+            db_size=db_size_param,
+            dim=dim,
+            query_size=query_size
+        )
+        
+        # 3. Dimension study
+        print("\n3. Running dimension study...")
+        benchmark.run_dimension_study(
+            dimensions=dimensions,
+            db_size=db_size_dim,
+            query_size=query_size
+        )
+        
+        # Save results and generate summary
+        benchmark.save_results()
+        benchmark.generate_summary_table()
+        
+        print(f"\nAll benchmarks completed! Results saved in '{benchmark.save_dir}' directory.")
+        print("Generated plots:")
+        print("- scale_benchmark.png")
+        print("- parameter_sweep.png")
+        print("- dimension_study.png")
+    except Exception as e:
+        print(f"Error in synthetic speed benchmark: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

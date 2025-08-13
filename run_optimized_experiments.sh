@@ -9,6 +9,9 @@ echo "=========================================="
 echo "⚡ Optimized for speed with parallel execution"
 echo "⏱️  Expected runtime: 5-10 minutes (vs 30+ minutes for full suite)"
 
+# Record start time
+start_time=$(date +%s)
+
 # Check if we're in the right directory
 if [ ! -f "asteria/__init__.py" ]; then
     echo "Error: Please run this script from the Asteria root directory"
@@ -32,15 +35,14 @@ run_experiment_fast() {
     echo "🚀 Running $name (max ${max_time}s)..."
     echo "-----------------------------------"
     
-    cd .. 2>/dev/null || true
-    
     if [ "$bg_flag" = "background" ]; then
-        timeout "$max_time" python "$script" --fast-mode 2>/dev/null &
+        timeout "$max_time" python -u "$script" --fast-mode 2>/dev/null &
         local pid=$!
         echo "  Started in background (PID: $pid)"
+        echo "$pid"  # Return PID for tracking
         return 0
     else
-        timeout "$max_time" python "$script" --fast-mode 2>/dev/null
+        timeout "$max_time" python -u "$script" --fast-mode 2>/dev/null
         local exit_code=$?
         if [ $exit_code -eq 124 ]; then
             echo "  ⚠️  Timeout reached (${max_time}s) - partial results saved"
@@ -69,12 +71,10 @@ echo ""
 echo "🔄 Starting parallel background experiments..."
 
 # 3. Comparative Analysis (Background) - 4 minutes max
-run_experiment_fast "Comparative Analysis" "experiments/comparative_analysis.py" "240" "background"
-comp_pid=$!
+comp_pid=$(run_experiment_fast "Comparative Analysis" "experiments/comparative_analysis.py" "240" "background")
 
 # 4. Advanced Research (Background) - 3 minutes max  
-run_experiment_fast "Advanced Research" "experiments/advanced_research.py" "180" "background"
-adv_pid=$!
+adv_pid=$(run_experiment_fast "Advanced Research" "experiments/advanced_research.py" "180" "background")
 
 # 5. Synthetic Speed Test (Fast) - 1 minute max
 run_experiment_fast "Synthetic Speed Test" "benchmarks/synthetic_speed.py" "60"
@@ -89,6 +89,12 @@ wait_with_progress() {
     local name="$2"
     local count=0
     
+    # Check if process exists
+    if ! kill -0 "$pid" 2>/dev/null; then
+        printf "\r  ⚠️  $name finished immediately               \n"
+        return 1
+    fi
+    
     while kill -0 "$pid" 2>/dev/null; do
         printf "\r  ⏳ $name: ${count}s elapsed..."
         sleep 1
@@ -101,15 +107,20 @@ wait_with_progress() {
     else
         printf "\r  ⚠️  $name finished with warnings (${count}s)    \n"
     fi
+    return $exit_code
+}
+    else
+        printf "\r  ⚠️  $name finished with warnings (${count}s)    \n"
+    fi
 }
 
 # Wait for comparative analysis
-if jobs -p | grep -q "$comp_pid"; then
+if [ -n "$comp_pid" ] && [ "$comp_pid" != "0" ]; then
     wait_with_progress "$comp_pid" "Comparative Analysis"
 fi
 
 # Wait for advanced research
-if jobs -p | grep -q "$adv_pid"; then
+if [ -n "$adv_pid" ] && [ "$adv_pid" != "0" ]; then
     wait_with_progress "$adv_pid" "Advanced Research"
 fi
 

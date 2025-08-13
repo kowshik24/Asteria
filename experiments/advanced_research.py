@@ -9,12 +9,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import numpy as np
 import time
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for server environments
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, List, Tuple, Optional, Any
 import json
 from pathlib import Path
 import warnings
+import argparse
 warnings.filterwarnings('ignore')
 
 # Asteria imports
@@ -909,38 +912,65 @@ class AdvancedResearchExperiments:
 def main():
     """Run advanced research experiments"""
     
+    parser = argparse.ArgumentParser(description='Advanced Research Experiments for Asteria')
+    parser.add_argument('--fast-mode', action='store_true', 
+                       help='Run in fast mode with reduced dataset sizes')
+    parser.add_argument('--output-dir', type=str, default='research_results_optimized/advanced_results',
+                       help='Output directory for results')
+    
+    args = parser.parse_args()
+    
+    # Set environment variables based on arguments
+    if args.fast_mode:
+        os.environ['ASTERIA_FAST_MODE'] = '1'
+        os.environ['ASTERIA_SMALL_DATASETS'] = '1'
+    
     print("Starting Advanced Research Experiments for Asteria...")
     
-    experiments = AdvancedResearchExperiments()
+    experiments = AdvancedResearchExperiments(args.output_dir)
     
-    # 1. Dimensionality study
-    print("\n1. Running dimensionality study...")
-    experiments.run_dimensionality_study()
-    
-    # 2. Parameter sensitivity analysis
-    print("\n2. Running parameter sensitivity analysis...")
-    experiments.run_parameter_sensitivity_analysis()
-    
-    # 3. Scalability analysis
-    print("\n3. Running scalability analysis...")
-    experiments.run_scalability_analysis(max_size=75000)
-    
-    # 4. Clustering analysis
-    print("\n4. Running clustering analysis...")
-    experiments.run_clustering_analysis()
-    
-    # Save results and generate summary
-    experiments.save_results()
-    experiments.generate_research_summary()
-    
-    print(f"\nAdvanced research experiments completed!")
-    print(f"Results saved in '{experiments.save_dir}' directory.")
-    print("\nGenerated files:")
-    print("  - advanced_results.json (all experimental data)")
-    print("  - dimensionality_study.png (dimension analysis)")
-    print("  - parameter_sensitivity.png (parameter studies)")
-    print("  - scalability_analysis.png (scalability results)")
-    print("  - clustering_analysis.png (clustering performance)")
+    try:
+        if args.fast_mode or os.getenv('ASTERIA_FAST_MODE', '0') == '1':
+            print("🚀 Running in FAST MODE - using reduced dataset sizes")
+            max_size = 10000
+            dims = [128, 256, 512]
+        else:
+            max_size = 75000
+            dims = [128, 256, 512, 768, 1024, 1536, 2048]
+        
+        # 1. Dimensionality study
+        print("\n1. Running dimensionality study...")
+        experiments.run_dimensionality_study(dims=dims)
+        
+        # 2. Parameter sensitivity analysis
+        print("\n2. Running parameter sensitivity analysis...")
+        experiments.run_parameter_sensitivity_analysis()
+        
+        # 3. Scalability analysis
+        print("\n3. Running scalability analysis...")
+        experiments.run_scalability_analysis(max_size=max_size)
+        
+        # 4. Clustering analysis
+        print("\n4. Running clustering analysis...")
+        experiments.run_clustering_analysis()
+        
+        # Save results and generate summary
+        experiments.save_results()
+        experiments.generate_research_summary()
+        
+        print(f"\nAdvanced research experiments completed!")
+        print(f"Results saved in '{experiments.save_dir}' directory.")
+        print("\nGenerated files:")
+        print("  - advanced_results.json (all experimental data)")
+        print("  - dimensionality_study.png (dimension analysis)")
+        print("  - parameter_sensitivity.png (parameter studies)")
+        print("  - scalability_analysis.png (scalability results)")
+        print("  - clustering_analysis.png (clustering performance)")
+    except Exception as e:
+        print(f"Error in advanced research experiments: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

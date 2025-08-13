@@ -9,12 +9,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import numpy as np
 import time
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for server environments
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, List, Tuple, Optional, Any
 import json
 from pathlib import Path
 import warnings
+import argparse
 warnings.filterwarnings('ignore')
 
 # Asteria imports
@@ -666,33 +669,55 @@ def generate_test_datasets() -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
 def main():
     """Run comparative analysis"""
     
+    parser = argparse.ArgumentParser(description='Comparative Analysis for Asteria')
+    parser.add_argument('--fast-mode', action='store_true', 
+                       help='Run in fast mode with reduced dataset sizes')
+    parser.add_argument('--output-dir', type=str, default='research_results_optimized/comparative_results',
+                       help='Output directory for results')
+    
+    args = parser.parse_args()
+    
+    # Set environment variables based on arguments
+    if args.fast_mode:
+        os.environ['ASTERIA_FAST_MODE'] = '1'
+        os.environ['ASTERIA_SMALL_DATASETS'] = '1'
+    
     print("Starting Comparative Analysis...")
     
-    analysis = ComparativeAnalysis()
+    analysis = ComparativeAnalysis(args.output_dir)
     
-    # Generate test datasets
-    datasets = generate_test_datasets()
-    
-    # Run comparisons on all datasets
-    for dataset_name, (db_vectors, query_vectors) in datasets.items():
-        print(f"\n{'='*60}")
-        print(f"Running comparison on {dataset_name} dataset")
-        print(f"{'='*60}")
+    try:
+        # Generate test datasets with potentially smaller sizes for fast mode
+        if args.fast_mode or os.getenv('ASTERIA_FAST_MODE', '0') == '1':
+            print("🚀 Running in FAST MODE - using reduced dataset sizes")
         
-        analysis.run_comprehensive_comparison(db_vectors, query_vectors, dataset_name)
+        datasets = generate_test_datasets()
         
-        # Generate LaTeX table
-        latex_table = analysis.generate_performance_table(dataset_name)
-        print(f"\nLaTeX table generated for {dataset_name}")
-    
-    # Save all results
-    analysis.save_results()
-    
-    print(f"\nComparative analysis completed! Results saved in '{analysis.save_dir}' directory.")
-    print("Generated files:")
-    print("  - comparative_results.json (all results)")
-    print("  - *_comparison.png (comparison plots)")
-    print("  - *_table.tex (LaTeX tables)")
+        # Run comparisons on all datasets
+        for dataset_name, (db_vectors, query_vectors) in datasets.items():
+            print(f"\n{'='*60}")
+            print(f"Running comparison on {dataset_name} dataset")
+            print(f"{'='*60}")
+            
+            analysis.run_comprehensive_comparison(db_vectors, query_vectors, dataset_name)
+            
+            # Generate LaTeX table
+            latex_table = analysis.generate_performance_table(dataset_name)
+            print(f"\nLaTeX table generated for {dataset_name}")
+        
+        # Save all results
+        analysis.save_results()
+        
+        print(f"\nComparative analysis completed! Results saved in '{analysis.save_dir}' directory.")
+        print("Generated files:")
+        print("  - comparative_results.json (all results)")
+        print("  - *_comparison.png (comparison plots)")
+        print("  - *_table.tex (LaTeX tables)")
+    except Exception as e:
+        print(f"Error in comparative analysis: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

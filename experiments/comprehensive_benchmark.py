@@ -8,11 +8,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import numpy as np
 import time
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for server environments
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, List, Tuple, Any
 import json
 from collections import defaultdict
+import argparse
 
 # Asteria imports
 from asteria.bor import ButterflyRotation
@@ -650,37 +653,72 @@ class ComprehensiveBenchmark:
 
 def main():
     """Run comprehensive benchmarks"""
-    benchmark = ComprehensiveBenchmark()
     
-    # 1. Scale experiment
-    benchmark.run_scale_experiment(
-        db_sizes=[1000, 5000, 10000, 25000, 50000],
-        query_size=1000,
-        dim=768
-    )
+    parser = argparse.ArgumentParser(description='Comprehensive Benchmark for Asteria')
+    parser.add_argument('--fast-mode', action='store_true', 
+                       help='Run in fast mode with reduced dataset sizes')
+    parser.add_argument('--output-dir', type=str, default='research_results_optimized/benchmark_results',
+                       help='Output directory for results')
     
-    # 2. Parameter study
-    base_config = {
-        'raw_bits': 32, 'code_bits': 32, 'm_vantages': 48,
-        'rank': 48, 'blocks': 12, 'target_mult': 8, 'max_radius': 2
-    }
+    args = parser.parse_args()
     
-    param_ranges = {
-        'code_bits': [16, 32, 64, 128],
-        'm_vantages': [24, 48, 96, 128],
-        'max_radius': [1, 2, 3, 4]
-    }
+    # Set environment variables based on arguments
+    if args.fast_mode:
+        os.environ['ASTERIA_FAST_MODE'] = '1'
+        os.environ['ASTERIA_SMALL_DATASETS'] = '1'
     
-    benchmark.run_parameter_study(base_config, param_ranges)
+    benchmark = ComprehensiveBenchmark(args.output_dir)
     
-    # 3. Memory vs accuracy study
-    benchmark.run_memory_vs_accuracy()
-    
-    # Save results and generate report
-    benchmark.save_results()
-    benchmark.generate_summary_report()
-    
-    print("All benchmarks completed! Check the 'benchmark_results' directory for plots and data.")
+    try:
+        # Adjust parameters based on fast mode
+        if args.fast_mode or os.getenv('ASTERIA_FAST_MODE', '0') == '1':
+            db_sizes = [1000, 2500, 5000]
+            query_size = 200
+            dim = 512
+            print("🚀 Running in FAST MODE - using reduced dataset sizes")
+        else:
+            db_sizes = [1000, 5000, 10000, 25000, 50000]
+            query_size = 1000
+            dim = 768
+        
+        # 1. Scale experiment
+        print("Running scale experiment...")
+        benchmark.run_scale_experiment(
+            db_sizes=db_sizes,
+            query_size=query_size,
+            dim=dim
+        )
+        
+        # 2. Parameter study
+        print("Running parameter study...")
+        base_config = {
+            'raw_bits': 32, 'code_bits': 32, 'm_vantages': 48,
+            'rank': 48, 'blocks': 12, 'target_mult': 8, 'max_radius': 2
+        }
+        
+        param_ranges = {
+            'code_bits': [16, 32, 64],  # Reduced for fast mode
+            'm_vantages': [24, 48, 96],
+            'max_radius': [1, 2, 3]
+        }
+        
+        benchmark.run_parameter_study(base_config, param_ranges, 
+                                    db_size=db_sizes[-1], query_size=query_size)
+        
+        # 3. Memory vs accuracy study
+        print("Running memory vs accuracy study...")
+        benchmark.run_memory_vs_accuracy(db_size=db_sizes[-1], query_size=query_size)
+        
+        # Save results and generate report
+        benchmark.save_results()
+        benchmark.generate_summary_report()
+        
+        print(f"All benchmarks completed! Check the '{benchmark.save_dir}' directory for plots and data.")
+    except Exception as e:
+        print(f"Error in comprehensive benchmark: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

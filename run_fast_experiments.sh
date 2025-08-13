@@ -81,9 +81,10 @@ base_config = {
     'rank': 48, 'blocks': 12, 'target_mult': 8, 'max_radius': 2
 }
 
+# Use only configurations that ensure rank is divisible by blocks
 param_ranges = {
     'code_bits': [32, 48, 64],  # Ensure code_bits >= raw_bits
-    'm_vantages': [32, 48, 64],
+    'm_vantages': [36, 48, 60],  # All divisible by 12
     'max_radius': [1, 2, 3]
 }
 
