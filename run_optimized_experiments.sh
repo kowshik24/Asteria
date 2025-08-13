@@ -20,7 +20,9 @@ fi
 
 # Create results directory
 mkdir -p research_results_optimized
-cd research_results_optimized
+
+# Make sure we're in the right directory for Python imports
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 
 echo "Starting FAST research experiments with optimizations..."
 
@@ -35,21 +37,35 @@ run_experiment_fast() {
     echo "🚀 Running $name (max ${max_time}s)..."
     echo "-----------------------------------"
     
+    # Create a temporary file for capturing stderr
+    local error_file="/tmp/asteria_error_$$.log"
+    
     if [ "$bg_flag" = "background" ]; then
-        timeout "$max_time" python -u "$script" --fast-mode 2>/dev/null &
+        timeout "$max_time" python -u "$script" --fast-mode 2>"$error_file" &
         local pid=$!
         echo "  Started in background (PID: $pid)"
         echo "$pid"  # Return PID for tracking
         return 0
     else
-        timeout "$max_time" python -u "$script" --fast-mode 2>/dev/null
+        timeout "$max_time" python -u "$script" --fast-mode 2>"$error_file"
         local exit_code=$?
+        
+        # Show errors if any
+        if [ -s "$error_file" ]; then
+            echo "  📋 Error output:"
+            head -10 "$error_file" | sed 's/^/    /'
+            if [ $(wc -l < "$error_file") -gt 10 ]; then
+                echo "    ... (truncated, see $error_file for full output)"
+            fi
+        fi
+        
         if [ $exit_code -eq 124 ]; then
             echo "  ⚠️  Timeout reached (${max_time}s) - partial results saved"
         elif [ $exit_code -ne 0 ]; then
             echo "  ⚠️  Warning: $name had issues (exit code: $exit_code), continuing..."
         else
             echo "  ✅ $name completed successfully"
+            rm -f "$error_file"  # Clean up on success
         fi
         return $exit_code
     fi
@@ -109,10 +125,6 @@ wait_with_progress() {
     fi
     return $exit_code
 }
-    else
-        printf "\r  ⚠️  $name finished with warnings (${count}s)    \n"
-    fi
-}
 
 # Wait for comparative analysis
 if [ -n "$comp_pid" ] && [ "$comp_pid" != "0" ]; then
@@ -142,14 +154,14 @@ echo "----------------------------------------------------"
 
 # Function to count and list results
 show_results() {
-    local dir="$1"
+    local dir="research_results_optimized/$1"
     local name="$2"
     
     if [ -d "$dir" ]; then
-        local count=$(find "$dir" -type f \( -name "*.json" -o -name "*.png" -o -name "*.tex" \) | wc -l)
+        local count=$(find "$dir" -type f \( -name "*.json" -o -name "*.png" -o -name "*.tex" \) 2>/dev/null | wc -l)
         echo "📁 $name: $count files"
         find "$dir" -name "*.png" -exec basename {} \; 2>/dev/null | sed 's/^/    📈 /' | head -3
-        if [ $(find "$dir" -name "*.png" | wc -l) -gt 3 ]; then
+        if [ $(find "$dir" -name "*.png" 2>/dev/null | wc -l) -gt 3 ]; then
             echo "    ... and more"
         fi
     else

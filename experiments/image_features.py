@@ -4,8 +4,14 @@ Support for CLIP, DINO, and other vision models
 """
 import torch
 import torch.nn as nn
-import torchvision.transforms as transforms
-from PIL import Image
+try:
+    import torchvision.transforms as transforms
+    from PIL import Image
+    VISION_AVAILABLE = True
+except ImportError:
+    VISION_AVAILABLE = False
+    print("Warning: torchvision/PIL not available. Image experiments will be skipped.")
+
 import numpy as np
 import os
 from typing import List, Union, Tuple
@@ -14,6 +20,10 @@ class ImageFeatureExtractor:
     """Extract dense features from images using pre-trained models"""
     
     def __init__(self, model_name='clip', device='auto', cache_dir='./models'):
+        if not VISION_AVAILABLE:
+            raise ImportError("torchvision and PIL are required for image feature extraction. "
+                            "Please install them: pip install torchvision pillow")
+        
         # Auto-detect best device
         if device == 'auto':
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
