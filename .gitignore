@@ -17,3 +17,6 @@ asteria/.vscode-test/
 asteria/.ropeproject/
 asteria/.ropeconfig/
 experiments/__pycache__/
+benchmarks/__pycache__/
+research_results_*/
+__pycache__/
