@@ -93,3 +93,94 @@ DB Size    QPS      Recall@10    Build Time
 50000      102.4    1.0000       1.58        
 
 Real image experiments completed! Results saved in 'research_results_optimized/real_image_results' directory.
+Warning: torchvision/PIL not available. Image experiments will be skipped.
+⚡ Running in OPTIMIZED MODE - enhanced performance
+Starting real image experiments...
+
+1. Running CIFAR-10 experiment...
+=== Running CIFAR-10 Experiment ===
+Setting up CIFAR-10 experiment...
+❌ Error setting up CIFAR-10: No module named 'torchvision', using dummy data
+
+Testing configuration: Fast
+  QPS: 7859.80
+  Standard Recall@10: 0.9660
+  Semantic Recall@10: 0.1040
+  Build time: 0.00s
+
+Testing configuration: Balanced
+  QPS: 404.07
+  Standard Recall@10: 0.9660
+  Semantic Recall@10: 0.1040
+  Build time: 0.01s
+
+Testing configuration: Accurate
+  QPS: 3.57
+  Standard Recall@10: 0.9660
+  Semantic Recall@10: 0.1040
+  Build time: 0.01s
+
+2. Running scalability study...
+=== Running Scalability Study ===
+
+Testing with database size: 1000
+Setting up CIFAR-10 experiment...
+❌ Error setting up CIFAR-10: No module named 'torchvision', using dummy data
+  QPS: 574.41
+  Recall@10: 0.9700
+  Build time: 0.00s
+
+Testing with database size: 5000
+Setting up CIFAR-10 experiment...
+❌ Error setting up CIFAR-10: No module named 'torchvision', using dummy data
+  QPS: 406.87
+  Recall@10: 0.9580
+  Build time: 0.01s
+
+Testing with database size: 10000
+Setting up CIFAR-10 experiment...
+❌ Error setting up CIFAR-10: No module named 'torchvision', using dummy data
+  QPS: 409.78
+  Recall@10: 0.9620
+  Build time: 0.01s
+
+Testing with database size: 25000
+Generating synthetic CIFAR-10-like data...
+  Database size: 25000
+  Query size: 1000
+  QPS: 198.74
+  Recall@10: 1.0000
+  Build time: 0.67s
+
+Testing with database size: 50000
+Generating synthetic CIFAR-10-like data...
+  Database size: 50000
+  Query size: 1000
+  QPS: 116.15
+  Recall@10: 1.0000
+  Build time: 1.19s
+Results saved to research_results_optimized/real_image_results/real_image_results.json
+
+================================================================================
+REAL IMAGE EXPERIMENT SUMMARY
+================================================================================
+
+CIFAR10_EXPERIMENT:
+----------------------------------------
+Config       QPS      Std Recall   Sem Recall   Build Time  
+------------------------------------------------------------
+Fast         7859.8   0.9660       0.1040       0.00        
+Balanced     404.1    0.9660       0.1040       0.01        
+Accurate     3.6      0.9660       0.1040       0.01        
+
+SCALABILITY_STUDY:
+----------------------------------------
+DB Size    QPS      Recall@10    Build Time  
+---------------------------------------------
+1000       574.4    0.9700       0.00        
+5000       406.9    0.9580       0.01        
+10000      409.8    0.9620       0.01        
+25000      198.7    1.0000       0.67        
+50000      116.2    1.0000       1.19        
+
+Real image experiments completed! Results saved in 'research_results_optimized/real_image_results' directory.

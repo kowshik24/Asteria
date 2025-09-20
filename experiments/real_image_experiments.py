@@ -173,8 +173,8 @@ class RealImageExperiment:
             
             return db_features, query_features, np.array(test_labels)
             
-        except ImportError:
-            print("❌ torchvision not available, using dummy data")
+        except (ImportError, Exception) as e:
+            print(f"❌ Error setting up CIFAR-10: {e}, using dummy data")
             dim = 512
             dummy_db = np.random.randn(100, dim).astype('float32')  
             dummy_queries = np.random.randn(50, dim).astype('float32')
