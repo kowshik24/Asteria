@@ -1,0 +1,117 @@
+{
+  "cifar10_experiment": [
+    {
+      "config_name": "Fast",
+      "config": {
+        "name": "Fast",
+        "raw_bits": 16,
+        "code_bits": 16,
+        "m_vantages": 32,
+        "rank": 32,
+        "blocks": 8,
+        "target_mult": 4,
+        "max_radius": 1
+      },
+      "build_time": 0.004458189010620117,
+      "search_time": 0.0061795711517333984,
+      "qps": 8091.176357112543,
+      "standard_recall@10": 0.9659999999999997,
+      "semantic_recall@10": 0.10199999999999998,
+      "db_size": 100,
+      "query_size": 50,
+      "feature_dim": 512,
+      "feature_model": "resnet"
+    },
+    {
+      "config_name": "Balanced",
+      "config": {
+        "name": "Balanced",
+        "raw_bits": 32,
+        "code_bits": 32,
+        "m_vantages": 48,
+        "rank": 48,
+        "blocks": 12,
+        "target_mult": 8,
+        "max_radius": 2
+      },
+      "build_time": 0.005556344985961914,
+      "search_time": 0.1233983039855957,
+      "qps": 405.19195471144,
+      "standard_recall@10": 0.9659999999999997,
+      "semantic_recall@10": 0.10199999999999998,
+      "db_size": 100,
+      "query_size": 50,
+      "feature_dim": 512,
+      "feature_model": "resnet"
+    },
+    {
+      "config_name": "Accurate",
+      "config": {
+        "name": "Accurate",
+        "raw_bits": 48,
+        "code_bits": 64,
+        "m_vantages": 96,
+        "rank": 64,
+        "blocks": 16,
+        "target_mult": 12,
+        "max_radius": 3
+      },
+      "build_time": 0.005773782730102539,
+      "search_time": 14.207378625869751,
+      "qps": 3.519298057486596,
+      "standard_recall@10": 0.9659999999999997,
+      "semantic_recall@10": 0.10199999999999998,
+      "db_size": 100,
+      "query_size": 50,
+      "feature_dim": 512,
+      "feature_model": "resnet"
+    }
+  ],
+  "scalability_study": [
+    {
+      "db_size": 1000,
+      "build_time": 0.003705739974975586,
+      "search_time": 0.08634805679321289,
+      "qps": 579.0518264903222,
+      "recall@10": 0.98,
+      "query_size": 50,
+      "feature_dim": 512
+    },
+    {
+      "db_size": 5000,
+      "build_time": 0.005582094192504883,
+      "search_time": 0.12370920181274414,
+      "qps": 404.17365294850003,
+      "recall@10": 0.9559999999999996,
+      "query_size": 50,
+      "feature_dim": 512
+    },
+    {
+      "db_size": 10000,
+      "build_time": 0.006051778793334961,
+      "search_time": 0.12250399589538574,
+      "qps": 408.14995163666583,
+      "recall@10": 0.9599999999999997,
+      "query_size": 50,
+      "feature_dim": 512
+    },
+    {
+      "db_size": 25000,
+      "build_time": 0.6047768592834473,
+      "search_time": 4.715962171554565,
+      "qps": 212.04580605665905,
+      "recall@10": 1.0,
+      "query_size": 1000,
+      "feature_dim": 512
+    },
+    {
+      "db_size": 50000,
+      "build_time": 1.1463656425476074,
+      "search_time": 7.9521284103393555,
+      "qps": 125.75249648883943,
+      "recall@10": 1.0,
+      "query_size": 1000,
+      "feature_dim": 512
+    }
+  ]
+}
