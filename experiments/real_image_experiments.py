@@ -58,10 +58,10 @@ class RealImageExperiment:
             print("❌ Skipping CIFAR-10 experiment - image features not available")
             # Return dummy data for testing
             dim = 512
-            dummy_train = np.random.randn(1000, dim).astype('float32')
             dummy_db = np.random.randn(100, dim).astype('float32')  
             dummy_queries = np.random.randn(50, dim).astype('float32')
-            return dummy_train, dummy_db, dummy_queries
+            dummy_labels = np.random.randint(0, 10, size=50)  # Generate proper labels
+            return dummy_db, dummy_queries, dummy_labels
         
         print("Setting up CIFAR-10 experiment...")
         
@@ -77,13 +77,6 @@ class RealImageExperiment:
         try:
             import torchvision
             import torchvision.transforms as transforms
-        except ImportError:
-            print("❌ torchvision not available, using dummy data")
-            dim = 512
-            dummy_train = np.random.randn(1000, dim).astype('float32')
-            dummy_db = np.random.randn(100, dim).astype('float32')  
-            dummy_queries = np.random.randn(50, dim).astype('float32')
-            return dummy_train, dummy_db, dummy_queries
             
             print(f"Will process {subset_size} training images and {min(500, subset_size//10)} test images")
             
@@ -180,9 +173,13 @@ class RealImageExperiment:
             
             return db_features, query_features, np.array(test_labels)
             
-        except ImportError:
-            print("torchvision not available. Generating synthetic image-like data...")
-            return self._generate_synthetic_cifar10_like(subset_size)
+        except (ImportError, Exception) as e:
+            print(f"❌ Error setting up CIFAR-10: {e}, using dummy data")
+            dim = 512
+            dummy_db = np.random.randn(100, dim).astype('float32')  
+            dummy_queries = np.random.randn(50, dim).astype('float32')
+            dummy_labels = np.random.randint(0, 10, size=50)  # Generate proper labels
+            return dummy_db, dummy_queries, dummy_labels
     
     def _generate_synthetic_cifar10_like(self, subset_size: Optional[int]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Generate synthetic data that mimics CIFAR-10 structure"""
